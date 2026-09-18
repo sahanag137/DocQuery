@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Environment variables / API keys
+.env
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Node.js
+node_modules/
+dist/
+.vite/
+
+# Generated data
+data/documents/*
+data/processed/*
+data/indexes/*
+
+# IDE
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
