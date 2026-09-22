@@ -3,7 +3,7 @@ main.py
 
 Entry point for the DocQuery API.
 
-DocQuery is a RAG-Based Documentation Question Answering System.
+DoscQuery is a RAG-Based Documentation Question Answering System.
 This file only sets up the core FastAPI application and a couple of
 basic endpoints (root and health check). Other features such as
 document upload, embeddings, FAISS search, RAG retrieval, LLM
