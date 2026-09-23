@@ -1,8 +1,5 @@
 """
 generator.py — send the prompt to an LLM via OpenRouter and return the generated answer.
-
-Uses a fallback list of free models: if the first hits a rate limit or errors,
-OpenRouter automatically retries the next one in the list.
 """
 import json
 import os
