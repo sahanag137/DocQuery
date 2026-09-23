@@ -7,7 +7,7 @@ import urllib.request
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 MODEL_NAME = "google/gemini-2.5-flash-lite"   # swap for any OpenRouter model slug
-API_KEY = os.environ.get("OPENROUTER_API_KEY")
+API_KEY = os.environ.get("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")
 
 
 def generate(messages: list[dict]) -> str:
