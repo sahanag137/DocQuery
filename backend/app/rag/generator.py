@@ -1,20 +1,29 @@
 """
 generator.py — send the prompt to an LLM via OpenRouter and return the generated answer.
+
+Uses a fallback list of free models: if the first hits a rate limit or errors,
+OpenRouter automatically retries the next one in the list.
 """
 import json
 import os
 import urllib.request
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-MODEL_NAME = "google/gemini-2.5-flash-lite"   # swap for any OpenRouter model slug
 API_KEY = os.environ.get("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")
+
+# Tried in order — OpenRouter auto-falls-back to the next if one is rate-limited/down.
+MODEL_FALLBACKS = [
+    "nvidia/nemotron-nano-9b-v2:free",
+    "qwen/qwen3-next-80b-a3b-instruct:free",
+    "meta-llama/llama-3-8b-instruct:free",
+]
 
 
 def generate(messages: list[dict]) -> str:
     if not API_KEY:
         raise RuntimeError("Set the OPENROUTER_API_KEY environment variable.")
 
-    payload = json.dumps({"model": MODEL_NAME, "messages": messages}).encode()
+    payload = json.dumps({"models": MODEL_FALLBACKS, "messages": messages}).encode()
     req = urllib.request.Request(
         OPENROUTER_URL,
         data=payload,
@@ -27,3 +36,21 @@ def generate(messages: list[dict]) -> str:
         data = json.loads(resp.read())
 
     return data["choices"][0]["message"]["content"]
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+   
