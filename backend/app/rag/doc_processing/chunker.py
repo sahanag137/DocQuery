@@ -1,55 +1,38 @@
-"""
-source.py — load raw documents and split them into retrievable chunks.
-"""
-from dataclasses import dataclass
-from pathlib import Path
-import re
+def chunk_pages(
+    pages: list[dict],
+    chunk_size: int = 1000,
+    overlap: int = 150
+) -> list[dict]:
 
+    chunks = []
 
-@dataclass
-class Chunk:
-    id: str
-    text: str
-    source: str
-    page: int = 0
+    for page_data in pages:
+        text = page_data["text"]
+        page_number = page_data["page"]
 
+        start = 0
 
-def load_text_files(folder: str) -> list[dict]:
-    """Load all .txt/.md files from a folder as {source, text} dicts."""
-    docs = []
-    for path in Path(folder).glob("**/*"):
-        if path.suffix.lower() in (".txt", ".md"):
-            docs.append({"source": path.name, "text": path.read_text(encoding="utf-8")})
-    return docs
+        while start < len(text):
+            end = min(start + chunk_size, len(text))
 
+            if end < len(text):
+                split = text.rfind(" ", start, end)
 
-def chunk_text(text: str, source: str, chunk_size: int = 500, overlap: int = 80) -> list[Chunk]:
-    """Simple sliding-window chunker, splitting on sentence boundaries where possible."""
-    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
-    chunks, current, current_len = [], [], 0
+                if split > start:
+                    end = split
 
-    for sent in sentences:
-        current.append(sent)
-        current_len += len(sent)
-        if current_len >= chunk_size:
-            chunk_str = " ".join(current)
-            chunks.append(chunk_str)
-            # keep the tail for overlap
-            overlap_text = chunk_str[-overlap:]
-            current, current_len = [overlap_text], len(overlap_text)
+            chunk = text[start:end].strip()
 
-    if current:
-        chunks.append(" ".join(current))
+            if chunk:
+                chunks.append({
+                    "text": chunk,
+                    "page": page_number,
+                    "chunk_id": len(chunks)
+                })
 
-    return [
-        Chunk(id=f"{source}::{i}", text=c, source=source)
-        for i, c in enumerate(chunks) if c.strip()
-    ]
+            if end >= len(text):
+                break
 
+            start = max(end - overlap, start + 1)
 
-def build_corpus(folder: str, chunk_size: int = 500, overlap: int = 80) -> list[Chunk]:
-    """Load every doc in folder and return a flat list of Chunks."""
-    all_chunks = []
-    for doc in load_text_files(folder):
-        all_chunks.extend(chunk_text(doc["text"], doc["source"], chunk_size, overlap))
-    return all_chunks
+    return chunks
