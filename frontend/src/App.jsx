@@ -2,15 +2,20 @@
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import Login from "./Login";
+import Signup from "./Signup";
+import ForgotPassword from "./ForgotPassword";
+import ResetPassword from "./ResetPassword";
 
 const API_URL = "http://127.0.0.1:8000";
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [authPage, setAuthPage] = useState("login");
 
   const [file, setFile] = useState(null);
   const [documentId, setDocumentId] = useState("");
   const [documents, setDocuments] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -108,9 +113,7 @@ function App() {
       const uploadedId = data.document_id || data.id;
 
       if (!uploadedId) {
-        throw new Error(
-          "Upload response did not contain a document ID."
-        );
+        throw new Error("Upload response did not contain a document ID.");
       }
 
       setDocumentId(String(uploadedId));
@@ -255,13 +258,22 @@ function App() {
 
   function handleLogout() {
     setIsLoggedIn(false);
+    setAuthPage("login");
     setFile(null);
     setDocumentId("");
+    setDocuments([]);
+    setSearchTerm("");
     setMessages([]);
     setQuestion("");
     setError("");
     setActiveTab("chat");
   }
+
+  const filteredDocuments = documents.filter((document) =>
+    (document.filename || "Untitled document")
+      .toLowerCase()
+      .includes(searchTerm.trim().toLowerCase())
+  );
 
   const selectedDocument = documents.find(
     (document) =>
@@ -276,11 +288,61 @@ function App() {
     };
   }, [pdfUrl]);
 
-  // Show login page before opening the dashboard.
+  // Authentication pages
   if (!isLoggedIn) {
-    return <Login onLogin={() => setIsLoggedIn(true)} />;
+    if (authPage === "signup") {
+      return (
+        <Signup
+          onSignup={(userData) => {
+            console.log("Signup form submitted:", userData);
+            alert("Signup API connection is pending.");
+          }}
+          onBackToLogin={() => setAuthPage("login")}
+        />
+      );
+    }
+
+    if (authPage === "forgot") {
+      return (
+        <ForgotPassword
+          onBackToLogin={() => setAuthPage("login")}
+          onResetPassword={(email) => {
+            console.log("Password reset requested for:", email);
+            alert(
+              "Password reset API connection is pending. Opening the reset page for frontend testing."
+            );
+            setAuthPage("reset");
+          }}
+        />
+      );
+    }
+
+    if (authPage === "reset") {
+      return (
+        <ResetPassword
+          onBackToLogin={() => setAuthPage("login")}
+          onReset={(passwordData) => {
+            console.log("New password submitted:", passwordData);
+            alert("Reset Password API connection is pending.");
+            setAuthPage("login");
+          }}
+        />
+      );
+    }
+
+    return (
+      <Login
+        onLogin={(credentials) => {
+          console.log("Login form submitted:", credentials);
+          alert("Login API connection is pending.");
+        }}
+        onSignupClick={() => setAuthPage("signup")}
+        onForgotPassword={() => setAuthPage("forgot")}
+      />
+    );
   }
 
+  // Main dashboard
   return (
     <div className="app-shell">
       <aside className={`sidebar ${sidebarOpen ? "" : "sidebar-closed"}`}>
@@ -357,6 +419,7 @@ function App() {
 
         <div className="sidebar-bottom">
           <div className="profile-avatar">U</div>
+
           {sidebarOpen && (
             <div className="profile-info">
               <strong>My Workspace</strong>
@@ -430,8 +493,17 @@ function App() {
               onChange={handleFileChange}
             />
 
+            <div className="document-search">
+              <input
+                type="text"
+                placeholder="Search documents by filename..."
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+              />
+            </div>
+
             <div className="document-grid">
-              {documents.map((document) => {
+              {filteredDocuments.map((document) => {
                 const id = document.document_id || document.id;
 
                 return (
@@ -477,11 +549,19 @@ function App() {
                 );
               })}
 
-              {documents.length === 0 && (
+              {filteredDocuments.length === 0 && (
                 <div className="empty-documents">
                   <div>▤</div>
-                  <h3>Your library is empty</h3>
-                  <p>Upload your first PDF to get started.</p>
+                  <h3>
+                    {documents.length === 0
+                      ? "Your library is empty"
+                      : "No matching documents found"}
+                  </h3>
+                  <p>
+                    {documents.length === 0
+                      ? "Upload your first PDF to get started."
+                      : "Try searching with a different filename."}
+                  </p>
                 </div>
               )}
             </div>

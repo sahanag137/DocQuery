@@ -2,7 +2,7 @@
 import { useState } from "react";
 import "./Login.css";
 
-function Login({ onLogin }) {
+function Login({ onLogin, onSignupClick, onForgotPassword }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -15,12 +15,13 @@ function Login({ onLogin }) {
       return;
     }
 
-    onLogin?.();
+    onLogin?.({ email, password });
   };
 
   return (
     <main className="login-page">
       <section className="login-card">
+
         <div className="login-brand">
           <div className="login-logo">D</div>
           <h1>DocQuery</h1>
@@ -34,6 +35,7 @@ function Login({ onLogin }) {
 
         <form onSubmit={handleSubmit}>
           <label htmlFor="email">Email address</label>
+
           <input
             id="email"
             type="email"
@@ -45,10 +47,11 @@ function Login({ onLogin }) {
 
           <div className="password-label">
             <label htmlFor="password">Password</label>
+
             <button
               type="button"
               className="text-button"
-              onClick={() => alert("Password recovery will be added next.")}
+              onClick={onForgotPassword}
             >
               Forgot password?
             </button>
@@ -63,6 +66,7 @@ function Login({ onLogin }) {
               onChange={(e) => setPassword(e.target.value)}
               required
             />
+
             <button
               type="button"
               className="show-password"
@@ -78,8 +82,16 @@ function Login({ onLogin }) {
         </form>
 
         <p className="login-footer">
-          Don't have an account? <span>Sign up coming soon</span>
+          Don't have an account?{" "}
+          <button
+            type="button"
+            className="text-button"
+            onClick={onSignupClick}
+          >
+            Sign up
+          </button>
         </p>
+
       </section>
     </main>
   );
