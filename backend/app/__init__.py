@@ -1,0 +1,3 @@
+"""
+DocQuery backend application package.
+"""

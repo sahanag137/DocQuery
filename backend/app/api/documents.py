@@ -1,298 +1,167 @@
 """
 documents.py
 
-API layer for document management in the DocQuery system.
-
-This module exposes endpoints to upload, list, retrieve, and delete
-original documentation files. It only handles raw files on disk and
-their metadata in the database - no text extraction, chunking,
-embeddings, FAISS indexing, RAG retrieval, or LLM logic happens here.
-Those concerns belong to other modules that will be added later.
-
-Document metadata (document_id, filename, file_type, upload_date,
-status) is persisted in the SQLite database via the existing
-database/crud/models layer. The physical files themselves still live
-on disk under data/documents/.
-
-Supported file types (for now): PDF, Markdown (.md), and plain text (.txt).
+API routes for document upload, listing, details, inline viewing,
+secure download, and deletion.
 """
 
-import shutil
-import uuid
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.database import crud
-from app.database.database import get_db
-from app.database.models import Document
+from app.api.auth import get_current_user
+from app.core.config import settings
+from app.database.connection import get_db
+from app.models.document import Document
+from app.models.user import User
+from app.schemas.document import DocumentResponse, DocumentUploadResponse
+from app.services import document_service
+from app.services.document_service import _to_document_response
+from app.utils.file_handler import range_request_response
 
-# Router for all document-related endpoints.
-# Every route defined here will automatically be prefixed with "/documents".
 router = APIRouter(prefix="/documents", tags=["documents"])
 
-# This file lives at: <PROJECT_ROOT>/backend/app/api/documents.py
-# parents[0] = api, parents[1] = app, parents[2] = backend, parents[3] = project root.
-# Computing the root this way means storage works the same whether the
-# server is started from the project root or from backend/.
-PROJECT_ROOT: Path = Path(__file__).resolve().parents[3]
 
-# Directory where uploaded files are stored on disk.
-DOCUMENTS_DIR: Path = PROJECT_ROOT / "data" / "documents"
+def _resolve_physical_file(doc: Document) -> Path:
+    """Resolve physical document file on disk with backward-compatibility fallbacks."""
+    if doc.file_path and Path(doc.file_path).is_file():
+        return Path(doc.file_path)
 
-# File extensions the system currently knows how to accept.
-ALLOWED_EXTENSIONS: set[str] = {".pdf", ".md", ".txt"}
+    # Check storage/documents
+    if doc.stored_filename:
+        storage_path = settings.DOCUMENTS_DIR / doc.stored_filename
+        if storage_path.is_file():
+            return storage_path
 
-# Separator used between the generated document ID and the original
-# filename when saving to disk. This lets us locate a document's
-# physical file later using only its document_id.
-ID_SEPARATOR: str = "__"
+    # Check legacy data/documents directory
+    legacy_dir = settings.DOCUMENTS_DIR.parents[1] / "data" / "documents"
+    if doc.document_id:
+        matches = list(legacy_dir.glob(f"{doc.document_id}__*"))
+        if matches and matches[0].is_file():
+            return matches[0]
 
-
-def _ensure_documents_dir() -> None:
-    """
-    Make sure the documents storage directory exists.
-
-    Creates the directory (including any missing parent directories)
-    if it does not already exist. Safe to call multiple times.
-    """
-    DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="The physical document file could not be found on the server.",
+    )
 
 
-def _build_stored_filename(document_id: str, original_filename: str) -> str:
-    """
-    Build the filename used to store a file on disk.
-
-    Combines the generated document ID with the original filename so
-    that:
-    - Files with identical original names never collide.
-    - The original filename can still be recovered from disk if needed.
-
-    Args:
-        document_id: The unique ID generated for this document.
-        original_filename: The filename provided by the uploader.
-
-    Returns:
-        The filename to use when saving the file to disk.
-    """
-    return f"{document_id}{ID_SEPARATOR}{original_filename}"
-
-
-def _find_document_path(document_id: str) -> Optional[Path]:
-    """
-    Look up the stored physical file path for a given document ID.
-
-    This only looks at the filesystem (used for saving/deleting the
-    actual file). Document metadata itself comes from the database.
-
-    Args:
-        document_id: The unique ID of the document to find.
-
-    Returns:
-        The matching Path if found, otherwise None.
-    """
-    _ensure_documents_dir()
-    matches = list(DOCUMENTS_DIR.glob(f"{document_id}{ID_SEPARATOR}*"))
-    return matches[0] if matches else None
-
-
-def _document_to_dict(document: Document) -> Dict[str, str]:
-    """
-    Convert a Document database record into a JSON-serializable dict.
-
-    Args:
-        document: The Document ORM instance to convert.
-
-    Returns:
-        A dict with document_id, filename, file_type, upload_date,
-        and status.
-    """
-    return {
-        "document_id": document.document_id,
-        "filename": document.filename,
-        "file_type": document.file_type,
-        "upload_date": document.upload_date.isoformat(),
-        "status": document.status,
-    }
-
-
-@router.post("/upload", status_code=status.HTTP_201_CREATED)
+@router.post("/upload", response_model=DocumentUploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-) -> Dict[str, str]:
+    current_user: User = Depends(get_current_user),
+) -> DocumentUploadResponse:
     """
-    Upload a single document (PDF, Markdown, or plain text).
-
-    The file is validated by extension, saved to the documents
-    directory under a unique, generated name, and a corresponding
-    metadata record is created in the database with status
-    "uploaded". If the database record cannot be created, the
-    physical file that was just saved is removed so the filesystem
-    and database stay consistent.
-
-    Args:
-        file: The uploaded file, provided as multipart/form-data.
-        db: Database session, injected by FastAPI.
-
-    Returns:
-        A dict with document_id, filename, file_type, status, and a
-        confirmation message.
-
-    Raises:
-        HTTPException: 400 if the filename is missing or the file
-            type is unsupported, or 500 if the file could not be
-            saved or the database record could not be created.
+    Upload a single document (PDF, TXT, or Markdown).
+    Validates file format and size, stores securely, and records ownership.
     """
-    if not file.filename:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Uploaded file must have a filename.",
-        )
-
-    file_extension = Path(file.filename).suffix.lower()
-    if file_extension not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                f"Unsupported file type '{file_extension}'. "
-                f"Allowed types: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
-            ),
-        )
-
-    _ensure_documents_dir()
-
-    # Generate a unique ID so files with the same name never overwrite each other.
-    document_id = uuid.uuid4().hex
-    stored_filename = _build_stored_filename(document_id, file.filename)
-    destination_path = DOCUMENTS_DIR / stored_filename
-    file_type = file_extension.lstrip(".")
-
-    # Step 1: Save the physical file to disk.
-    try:
-        with destination_path.open("wb") as destination_file:
-            shutil.copyfileobj(file.file, destination_file)
-    except OSError as error:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save uploaded file: {error}",
-        ) from error
-    finally:
-        file.file.close()
-
-    # Step 2: Create the corresponding database record.
-    try:
-        crud.create_document(
-            db=db,
-            document_id=document_id,
-            filename=file.filename,
-            file_type=file_type,
-            status="uploaded",
-        )
-    except Exception as error:
-        # Roll back the physical file so disk and database don't
-        # disagree about which documents exist.
-        destination_path.unlink(missing_ok=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save document metadata: {error}",
-        ) from error
-
-    return {
-        "document_id": document_id,
-        "filename": file.filename,
-        "file_type": file_type,
-        "status": "uploaded",
-        "message": "File uploaded successfully.",
-    }
+    document = await document_service.save_uploaded_document(
+        db=db, user_id=current_user.id, file=file
+    )
+    return DocumentUploadResponse(
+        id=document.id,
+        document_id=document.document_id or str(document.id),
+        filename=document.original_filename,
+        file_type=document.mime_type,
+        status=document.processing_status,
+        message="File uploaded successfully.",
+    )
 
 
-@router.get("")
-async def list_documents(db: Session = Depends(get_db)) -> List[Dict[str, str]]:
+@router.get("", response_model=List[DocumentResponse])
+def list_documents(
+    status_filter: Optional[str] = Query(None, alias="status"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> List[DocumentResponse]:
     """
-    List all documents recorded in the database.
-
-    Args:
-        db: Database session, injected by FastAPI.
-
-    Returns:
-        A list of dicts, each containing document_id, filename,
-        file_type, upload_date, and status for one stored document.
-        Returns an empty list if no documents have been uploaded yet.
+    List all documents uploaded by or accessible to the current user.
     """
-    documents = crud.get_documents(db)
-    return [_document_to_dict(document) for document in documents]
+    docs = document_service.get_user_documents(
+        db, user_id=current_user.id, status_filter=status_filter, skip=skip, limit=limit
+    )
+    return [_to_document_response(d) for d in docs]
 
 
-@router.get("/{document_id}")
-async def get_document(document_id: str, db: Session = Depends(get_db)) -> Dict[str, str]:
+@router.get("/{document_id}", response_model=DocumentResponse)
+def get_document_details(
+    document_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DocumentResponse:
     """
-    Get information about a single document by its ID.
-
-    Args:
-        document_id: The unique ID of the document to look up.
-        db: Database session, injected by FastAPI.
-
-    Returns:
-        A dict with document_id, filename, file_type, upload_date,
-        and status.
-
-    Raises:
-        HTTPException: 404 if no document with that ID exists.
+    Retrieve metadata for a specific document by its ID.
     """
-    document = crud.get_document(db, document_id)
-    if document is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Document '{document_id}' not found.",
-        )
+    doc = document_service.get_document_by_id_or_uuid(
+        db, document_id, user_id=current_user.id
+    )
+    return _to_document_response(doc)
 
-    return _document_to_dict(document)
+
+@router.get("/{document_id}/view")
+def view_document_inline(
+    document_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """
+    Stream a document for inline viewing (supports HTTP 206 Partial Content range requests).
+    Ideal for PDF viewers embedded in the frontend UI.
+    """
+    doc = document_service.get_document_by_id_or_uuid(
+        db, document_id, user_id=current_user.id
+    )
+    file_path = _resolve_physical_file(doc)
+    return range_request_response(
+        file_path=file_path,
+        request=request,
+        content_type=doc.mime_type,
+        inline_filename=doc.original_filename,
+    )
+
+
+@router.get("/{document_id}/download")
+def download_document(
+    document_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> FileResponse:
+    """
+    Download the original uploaded document as a file attachment.
+    """
+    doc = document_service.get_document_by_id_or_uuid(
+        db, document_id, user_id=current_user.id
+    )
+    file_path = _resolve_physical_file(doc)
+    return FileResponse(
+        path=str(file_path),
+        media_type=doc.mime_type,
+        filename=doc.original_filename,
+        headers={"Content-Disposition": f'attachment; filename="{doc.original_filename}"'},
+    )
 
 
 @router.delete("/{document_id}")
-async def delete_document(document_id: str, db: Session = Depends(get_db)) -> Dict[str, str]:
+def delete_document(
+    document_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, str]:
     """
-    Delete a document by its ID.
-
-    Looks up the document in the database, deletes the physical file
-    from disk (if present), and then removes the database record.
-
-    Args:
-        document_id: The unique ID of the document to delete.
-        db: Database session, injected by FastAPI.
-
-    Returns:
-        A dict confirming the deletion.
-
-    Raises:
-        HTTPException: 404 if no document with that ID exists in the
-            database, or 500 if the physical file could not be deleted.
+    Permanently delete a document and its file on disk.
     """
-    document = crud.get_document(db, document_id)
-    if document is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Document '{document_id}' not found.",
-        )
-
-    # Step 1: Delete the physical file, if it exists on disk.
-    file_path = _find_document_path(document_id)
-    if file_path is not None:
-        try:
-            file_path.unlink()
-        except OSError as error:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to delete document file: {error}",
-            ) from error
-
-    # Step 2: Delete the database record.
-    crud.delete_document(db, document_id)
-
+    doc = document_service.get_document_by_id_or_uuid(
+        db, document_id, user_id=current_user.id
+    )
+    document_service.delete_document(db, doc)
     return {
-        "document_id": document_id,
+        "document_id": str(document_id),
         "message": "Document deleted successfully.",
     }
