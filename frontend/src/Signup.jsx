@@ -7,8 +7,9 @@ function Signup({ onSignup, onBackToLogin }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
     if (password !== confirmPassword) {
@@ -21,7 +22,18 @@ function Signup({ onSignup, onBackToLogin }) {
       return;
     }
 
-    onSignup?.({ name, email, password });
+    try {
+      setLoading(true);
+      await onSignup?.({
+        full_name: name.trim(),
+        email: email.trim(),
+        password,
+      });
+    } catch (error) {
+      alert(error.message || "Signup failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -80,8 +92,12 @@ function Signup({ onSignup, onBackToLogin }) {
             required
           />
 
-          <button type="submit" className="signup-button">
-            Create account
+          <button
+            type="submit"
+            className="signup-button"
+            disabled={loading}
+          >
+            {loading ? "Creating account..." : "Create account"}
           </button>
         </form>
 

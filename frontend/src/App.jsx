@@ -9,6 +9,7 @@ import ResetPassword from "./ResetPassword";
 const API_URL = "http://127.0.0.1:8000";
 
 function App() {
+  // Always show Login when the application starts.
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authPage, setAuthPage] = useState("login");
 
@@ -25,32 +26,135 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeTab, setActiveTab] = useState("chat");
   const [zoom, setZoom] = useState(100);
+  const [loggingIn, setLoggingIn] = useState(false);
 
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
+  // AUTHENTICATION HEADERS
+  function getAuthHeaders() {
+    const token = localStorage.getItem("access_token");
+
+    return token
+      ? { Authorization: `Bearer ${token}` }
+      : {};
+  }
+
+  // LOAD DOCUMENTS AFTER LOGIN
   useEffect(() => {
     if (isLoggedIn) {
       loadDocuments();
     }
   }, [isLoggedIn]);
 
+  // AUTO SCROLL CHAT
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // SIGNUP API
+  async function handleSignup(userData) {
+    setLoggingIn(true);
+
+    try {
+      const response = await fetch(`${API_URL}/auth/signup`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          full_name: userData.full_name,
+          email: userData.email,
+          password: userData.password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        let errorMessage = "Unable to create account.";
+
+        if (typeof data.detail === "string") {
+          errorMessage = data.detail;
+        } else if (Array.isArray(data.detail)) {
+          errorMessage = data.detail
+            .map((item) => item.msg)
+            .join(", ");
+        }
+
+        throw new Error(errorMessage);
+      }
+
+      alert("Account created successfully! Please sign in.");
+      setAuthPage("login");
+    } catch (err) {
+      alert(err.message || "Signup failed. Please try again.");
+      throw err;
+    } finally {
+      setLoggingIn(false);
+    }
+  }
+
+  // LOGIN API
+  async function handleLogin(credentials) {
+    setLoggingIn(true);
+
+    try {
+      const response = await fetch(`${API_URL}/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: credentials.email,
+          password: credentials.password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data.detail === "string"
+            ? data.detail
+            : "Invalid email or password."
+        );
+      }
+
+      if (!data.access_token) {
+        throw new Error("Login response did not contain an access token.");
+      }
+
+      localStorage.setItem("access_token", data.access_token);
+      localStorage.setItem("user", JSON.stringify(data.user || {}));
+
+      setError("");
+      setIsLoggedIn(true);
+    } catch (err) {
+      alert(err.message || "Unable to login. Please try again.");
+    } finally {
+      setLoggingIn(false);
+    }
+  }
+
+  // LOAD DOCUMENTS
   async function loadDocuments() {
     setLoadingDocuments(true);
 
     try {
-      const response = await fetch(`${API_URL}/documents`);
+      const response = await fetch(`${API_URL}/documents`, {
+        headers: getAuthHeaders(),
+      });
 
       if (!response.ok) {
         throw new Error("Unable to load documents.");
       }
 
       const data = await response.json();
-      setDocuments(Array.isArray(data) ? data : data.documents || []);
+
+      setDocuments(
+        Array.isArray(data) ? data : data.documents || []
+      );
     } catch (err) {
       console.error("Document loading error:", err);
     } finally {
@@ -58,6 +162,7 @@ function App() {
     }
   }
 
+  // PDF FILE VALIDATION
   function handleFileChange(event) {
     const selected = event.target.files?.[0];
 
@@ -84,6 +189,7 @@ function App() {
     setMessages([]);
   }
 
+  // UPLOAD PDF
   async function handleUpload() {
     if (!file) {
       setError("Please select a PDF first.");
@@ -99,6 +205,7 @@ function App() {
 
       const response = await fetch(`${API_URL}/documents/upload`, {
         method: "POST",
+        headers: getAuthHeaders(),
         body: formData,
       });
 
@@ -125,6 +232,7 @@ function App() {
     }
   }
 
+  // ASK QUESTIONS ABOUT THE PDF
   async function handleAsk(event) {
     event.preventDefault();
 
@@ -162,6 +270,7 @@ function App() {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            ...getAuthHeaders(),
           },
           body: JSON.stringify({
             question: trimmedQuestion,
@@ -206,6 +315,7 @@ function App() {
     }
   }
 
+  // SELECT A DOCUMENT
   function selectDocument(document) {
     const id = document.document_id || document.id;
 
@@ -215,6 +325,7 @@ function App() {
     setError("");
   }
 
+  // DELETE A DOCUMENT
   async function deleteDocument(id) {
     if (!window.confirm("Are you sure you want to delete this document?")) {
       return;
@@ -223,7 +334,10 @@ function App() {
     try {
       const response = await fetch(
         `${API_URL}/documents/${encodeURIComponent(id)}`,
-        { method: "DELETE" }
+        {
+          method: "DELETE",
+          headers: getAuthHeaders(),
+        }
       );
 
       if (!response.ok) {
@@ -243,6 +357,7 @@ function App() {
     }
   }
 
+  // CREATE NEW CHAT
   function newChat() {
     setMessages([]);
     setQuestion("");
@@ -250,13 +365,33 @@ function App() {
     setActiveTab("chat");
   }
 
+  // COPY ANSWER
   function copyAnswer(answer) {
     navigator.clipboard.writeText(answer).catch(() => {
       setError("Unable to copy answer.");
     });
   }
 
-  function handleLogout() {
+  // LOGOUT
+  async function handleLogout() {
+    const token = localStorage.getItem("access_token");
+
+    try {
+      if (token) {
+        await fetch(`${API_URL}/auth/logout`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+      }
+    } catch (err) {
+      console.error("Logout request failed:", err);
+    }
+
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("user");
+
     setIsLoggedIn(false);
     setAuthPage("login");
     setFile(null);
@@ -269,6 +404,7 @@ function App() {
     setActiveTab("chat");
   }
 
+  // SEARCH DOCUMENTS
   const filteredDocuments = documents.filter((document) =>
     (document.filename || "Untitled document")
       .toLowerCase()
@@ -288,15 +424,12 @@ function App() {
     };
   }, [pdfUrl]);
 
-  // Authentication pages
+  // AUTHENTICATION PAGES
   if (!isLoggedIn) {
     if (authPage === "signup") {
       return (
         <Signup
-          onSignup={(userData) => {
-            console.log("Signup form submitted:", userData);
-            alert("Signup API connection is pending.");
-          }}
+          onSignup={handleSignup}
           onBackToLogin={() => setAuthPage("login")}
         />
       );
@@ -332,22 +465,20 @@ function App() {
 
     return (
       <Login
-        onLogin={(credentials) => {
-          console.log("Login form submitted:", credentials);
-          alert("Login API connection is pending.");
-        }}
+        onLogin={handleLogin}
         onSignupClick={() => setAuthPage("signup")}
         onForgotPassword={() => setAuthPage("forgot")}
       />
     );
   }
 
-  // Main dashboard
+  // MAIN DASHBOARD
   return (
     <div className="app-shell">
       <aside className={`sidebar ${sidebarOpen ? "" : "sidebar-closed"}`}>
         <div className="brand">
           <div className="brand-icon">D</div>
+
           {sidebarOpen && (
             <div>
               <h2>DocQuery</h2>
@@ -552,11 +683,13 @@ function App() {
               {filteredDocuments.length === 0 && (
                 <div className="empty-documents">
                   <div>▤</div>
+
                   <h3>
                     {documents.length === 0
                       ? "Your library is empty"
                       : "No matching documents found"}
                   </h3>
+
                   <p>
                     {documents.length === 0
                       ? "Upload your first PDF to get started."
@@ -583,6 +716,7 @@ function App() {
               <div className="upload-panel">
                 <div className="upload-symbol">↑</div>
                 <h2>Start with a document</h2>
+
                 <p>
                   Upload a PDF and let DocQuery help you understand it.
                 </p>
@@ -593,6 +727,14 @@ function App() {
                 >
                   Choose a PDF
                 </button>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  hidden
+                  onChange={handleFileChange}
+                />
 
                 {file && (
                   <div className="selected-file">

@@ -5,7 +5,7 @@
   align-items: center;
   justify-content: center;
   padding: 30px 20px;
-  background: #f3f5ef;
+  background: #f3f6f8;
   font-family: 'DM Sans', sans-serif;
 }
 
@@ -14,9 +14,9 @@
   max-width: 460px;
   padding: 38px 42px;
   background: #ffffff;
-  border: 1px solid #e6ebe3;
+  border: 1px solid #e2e9ed;
   border-radius: 18px;
-  box-shadow: 0 12px 40px rgba(35, 65, 46, 0.08);
+  box-shadow: 0 12px 40px rgba(23, 43, 58, 0.09);
 }
 
 .signup-brand {
@@ -32,7 +32,7 @@
   justify-content: center;
   margin: 0 auto 10px;
   border-radius: 15px;
-  background: #24583d;
+  background: #172b3a;
   color: white;
   font-size: 26px;
   font-weight: 700;
@@ -40,13 +40,13 @@
 
 .signup-brand h1 {
   margin: 0;
-  color: #24583d;
+  color: #172b3a;
   font-size: 25px;
 }
 
 .signup-brand p {
   margin-top: 7px;
-  color: #849087;
+  color: #7c8992;
   font-size: 13px;
 }
 
@@ -56,20 +56,20 @@
 
 .signup-heading h2 {
   margin: 0 0 8px;
-  color: #263b32;
+  color: #243746;
   font-size: 24px;
 }
 
 .signup-heading p {
   margin: 0;
-  color: #849087;
+  color: #7c8992;
   font-size: 14px;
 }
 
 .signup-card form label {
   display: block;
   margin-bottom: 8px;
-  color: #35483c;
+  color: #354956;
   font-size: 13px;
   font-weight: 600;
 }
@@ -79,22 +79,22 @@
   height: 46px;
   padding: 0 14px;
   margin-bottom: 17px;
-  border: 1px solid #dce3dc;
+  border: 1px solid #dce4e9;
   border-radius: 9px;
   background: white;
-  color: #263b32;
+  color: #243746;
   font-size: 14px;
   outline: none;
   box-sizing: border-box;
 }
 
 .signup-card form input:focus {
-  border-color: #548367;
-  box-shadow: 0 0 0 3px rgba(84, 131, 103, 0.1);
+  border-color: #16a085;
+  box-shadow: 0 0 0 3px rgba(22, 160, 133, 0.1);
 }
 
 .signup-card form input::placeholder {
-  color: #aab2aa;
+  color: #aab4bb;
 }
 
 .signup-button {
@@ -103,30 +103,40 @@
   margin-top: 5px;
   border: none;
   border-radius: 9px;
-  background: #24583d;
+  background: #172b3a;
   color: white;
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.2s ease;
 }
 
 .signup-button:hover {
-  background: #19452e;
+  background: #16a085;
+}
+
+.signup-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .signup-footer {
   margin: 23px 0 0;
   text-align: center;
-  color: #849087;
+  color: #7c8992;
   font-size: 13px;
 }
 
 .signup-footer button {
   border: none;
   background: transparent;
-  color: #39734f;
+  color: #138a78;
   font-weight: 600;
   cursor: pointer;
+}
+
+.signup-footer button:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 480px) {
