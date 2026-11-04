@@ -12,6 +12,7 @@ const API_URL =
   "http://127.0.0.1:8000";
 
 function App() {
+  // Always show Login when the application starts.
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authPage, setAuthPage] = useState("login");
   const [currentUser, setCurrentUser] = useState(() => {
@@ -81,27 +82,128 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeTab, setActiveTab] = useState("chat");
   const [zoom, setZoom] = useState(100);
+  const [loggingIn, setLoggingIn] = useState(false);
 
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
+  // AUTHENTICATION HEADERS
+  function getAuthHeaders() {
+    const token = localStorage.getItem("access_token");
+
+    return token
+      ? { Authorization: `Bearer ${token}` }
+      : {};
+  }
+
+  // LOAD DOCUMENTS AFTER LOGIN
   useEffect(() => {
     if (isLoggedIn) {
       loadDocuments();
     }
   }, [isLoggedIn]);
 
+  // AUTO SCROLL CHAT
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // SIGNUP API
+  async function handleSignup(userData) {
+    setLoggingIn(true);
+
+    try {
+      const response = await fetch(`${API_URL}/auth/signup`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          full_name: userData.full_name,
+          email: userData.email,
+          password: userData.password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        let errorMessage = "Unable to create account.";
+
+        if (typeof data.detail === "string") {
+          errorMessage = data.detail;
+        } else if (Array.isArray(data.detail)) {
+          errorMessage = data.detail
+            .map((item) => item.msg)
+            .join(", ");
+        }
+
+        throw new Error(errorMessage);
+      }
+
+      alert("Account created successfully! Please sign in.");
+      setAuthPage("login");
+    } catch (err) {
+      alert(err.message || "Signup failed. Please try again.");
+      throw err;
+    } finally {
+      setLoggingIn(false);
+    }
+  }
+
+  // LOGIN API
+  async function handleLogin(credentials) {
+    setLoggingIn(true);
+
+    try {
+      const response = await fetch(`${API_URL}/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: credentials.email,
+          password: credentials.password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data.detail === "string"
+            ? data.detail
+            : "Invalid email or password."
+        );
+      }
+
+      if (!data.access_token) {
+        throw new Error("Login response did not contain an access token.");
+      }
+
+      localStorage.setItem("access_token", data.access_token);
+      localStorage.setItem("user", JSON.stringify(data.user || {}));
+
+      setError("");
+      setIsLoggedIn(true);
+    } catch (err) {
+      alert(err.message || "Unable to login. Please try again.");
+    } finally {
+      setLoggingIn(false);
+    }
+  }
+
+  // LOAD DOCUMENTS
   async function loadDocuments() {
     setLoadingDocuments(true);
 
     try {
       const response = await fetch(`${API_URL}/documents`, {
         headers: getAuthHeaders(),
+<<<<<<< HEAD
         credentials: "include",
+=======
+>>>>>>> 09b71183d2ae901e26f21503c887fbbcafcd028b
       });
 
       if (!response.ok) {
@@ -109,7 +211,10 @@ function App() {
       }
 
       const data = await response.json();
-      setDocuments(Array.isArray(data) ? data : data.documents || []);
+
+      setDocuments(
+        Array.isArray(data) ? data : data.documents || []
+      );
     } catch (err) {
       console.error("Document loading error:", err);
     } finally {
@@ -117,11 +222,46 @@ function App() {
     }
   }
 
+<<<<<<< HEAD
   async function uploadFile(fileToUpload) {
     const targetFile = fileToUpload || file;
     if (!targetFile) {
       setError("Please select a document first.");
       return null;
+=======
+  // PDF FILE VALIDATION
+  function handleFileChange(event) {
+    const selected = event.target.files?.[0];
+
+    if (!selected) return;
+
+    if (
+      selected.type !== "application/pdf" &&
+      !selected.name.toLowerCase().endsWith(".pdf")
+    ) {
+      setError("Please select a valid PDF file.");
+      event.target.value = "";
+      return;
+    }
+
+    if (selected.size > 25 * 1024 * 1024) {
+      setError("Please select a PDF smaller than 25 MB.");
+      event.target.value = "";
+      return;
+    }
+
+    setError("");
+    setFile(selected);
+    setDocumentId("");
+    setMessages([]);
+  }
+
+  // UPLOAD PDF
+  async function handleUpload() {
+    if (!file) {
+      setError("Please select a PDF first.");
+      return;
+>>>>>>> 09b71183d2ae901e26f21503c887fbbcafcd028b
     }
 
     console.log("[DocQuery] Starting upload:", targetFile.name, targetFile.size, "bytes");
@@ -142,8 +282,12 @@ function App() {
 
       const response = await fetch(`${API_URL}/documents/upload`, {
         method: "POST",
+<<<<<<< HEAD
         headers,
         credentials: "include",
+=======
+        headers: getAuthHeaders(),
+>>>>>>> 09b71183d2ae901e26f21503c887fbbcafcd028b
         body: formData,
       });
 
@@ -179,6 +323,7 @@ function App() {
     }
   }
 
+<<<<<<< HEAD
   async function handleFileChange(event) {
     const selected = event.target.files?.[0];
 
@@ -220,6 +365,9 @@ function App() {
     await uploadFile(file);
   }
 
+=======
+  // ASK QUESTIONS ABOUT THE PDF
+>>>>>>> 09b71183d2ae901e26f21503c887fbbcafcd028b
   async function handleAsk(event) {
     event.preventDefault();
 
@@ -255,8 +403,15 @@ function App() {
         `${API_URL}/query/${encodeURIComponent(documentId)}`,
         {
           method: "POST",
+<<<<<<< HEAD
           headers: getAuthHeaders({ "Content-Type": "application/json" }),
           credentials: "include",
+=======
+          headers: {
+            "Content-Type": "application/json",
+            ...getAuthHeaders(),
+          },
+>>>>>>> 09b71183d2ae901e26f21503c887fbbcafcd028b
           body: JSON.stringify({
             question: trimmedQuestion,
             top_k: 5,
@@ -300,6 +455,7 @@ function App() {
     }
   }
 
+  // SELECT A DOCUMENT
   function selectDocument(document) {
     const id = document.document_id || document.id;
 
@@ -309,6 +465,7 @@ function App() {
     setError("");
   }
 
+  // DELETE A DOCUMENT
   async function deleteDocument(id) {
     if (!window.confirm("Are you sure you want to delete this document?")) {
       return;
@@ -320,7 +477,10 @@ function App() {
         {
           method: "DELETE",
           headers: getAuthHeaders(),
+<<<<<<< HEAD
           credentials: "include",
+=======
+>>>>>>> 09b71183d2ae901e26f21503c887fbbcafcd028b
         }
       );
 
@@ -341,6 +501,7 @@ function App() {
     }
   }
 
+  // CREATE NEW CHAT
   function newChat() {
     setMessages([]);
     setQuestion("");
@@ -348,12 +509,14 @@ function App() {
     setActiveTab("chat");
   }
 
+  // COPY ANSWER
   function copyAnswer(answer) {
     navigator.clipboard.writeText(answer).catch(() => {
       setError("Unable to copy answer.");
     });
   }
 
+<<<<<<< HEAD
   async function handleLogout() {
     try {
       await fetch(`${API_URL}/auth/logout`, {
@@ -385,6 +548,46 @@ function App() {
       document.filename || document.original_filename || "Untitled document";
     return name.toLowerCase().includes(searchTerm.trim().toLowerCase());
   });
+=======
+  // LOGOUT
+  async function handleLogout() {
+    const token = localStorage.getItem("access_token");
+
+    try {
+      if (token) {
+        await fetch(`${API_URL}/auth/logout`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+      }
+    } catch (err) {
+      console.error("Logout request failed:", err);
+    }
+
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("user");
+
+    setIsLoggedIn(false);
+    setAuthPage("login");
+    setFile(null);
+    setDocumentId("");
+    setDocuments([]);
+    setSearchTerm("");
+    setMessages([]);
+    setQuestion("");
+    setError("");
+    setActiveTab("chat");
+  }
+
+  // SEARCH DOCUMENTS
+  const filteredDocuments = documents.filter((document) =>
+    (document.filename || "Untitled document")
+      .toLowerCase()
+      .includes(searchTerm.trim().toLowerCase())
+  );
+>>>>>>> 09b71183d2ae901e26f21503c887fbbcafcd028b
 
   const selectedDocument = documents.find(
     (document) =>
@@ -399,6 +602,7 @@ function App() {
     };
   }, [pdfUrl]);
 
+<<<<<<< HEAD
   const authToken = localStorage.getItem("docquery_token");
   const viewUrl = file
     ? `${pdfUrl}#zoom=${zoom}`
@@ -407,14 +611,21 @@ function App() {
     : null;
 
   // Authentication pages
+=======
+  // AUTHENTICATION PAGES
+>>>>>>> 09b71183d2ae901e26f21503c887fbbcafcd028b
   if (!isLoggedIn) {
     if (authPage === "signup") {
       return (
         <Signup
+<<<<<<< HEAD
           onSignup={(userData) => {
             console.log("Signup form submitted:", userData);
             // User registered successfully
           }}
+=======
+          onSignup={handleSignup}
+>>>>>>> 09b71183d2ae901e26f21503c887fbbcafcd028b
           onBackToLogin={() => setAuthPage("login")}
         />
       );
@@ -458,24 +669,29 @@ function App() {
 
     return (
       <Login
+<<<<<<< HEAD
         onLogin={(authData) => {
           setIsLoggedIn(true);
           if (authData?.user) {
             setCurrentUser(authData.user);
           }
         }}
+=======
+        onLogin={handleLogin}
+>>>>>>> 09b71183d2ae901e26f21503c887fbbcafcd028b
         onSignupClick={() => setAuthPage("signup")}
         onForgotPassword={() => setAuthPage("forgot")}
       />
     );
   }
 
-  // Main dashboard
+  // MAIN DASHBOARD
   return (
     <div className="app-shell">
       <aside className={`sidebar ${sidebarOpen ? "" : "sidebar-closed"}`}>
         <div className="brand">
           <div className="brand-icon">D</div>
+
           {sidebarOpen && (
             <div>
               <h2>DocQuery</h2>
@@ -707,11 +923,13 @@ function App() {
               {filteredDocuments.length === 0 && (
                 <div className="empty-documents">
                   <div>▤</div>
+
                   <h3>
                     {documents.length === 0
                       ? "Your library is empty"
                       : "No matching documents found"}
                   </h3>
+
                   <p>
                     {documents.length === 0
                       ? "Upload your first PDF to get started."
@@ -738,6 +956,7 @@ function App() {
               <div className="upload-panel">
                 <div className="upload-symbol">↑</div>
                 <h2>Start with a document</h2>
+
                 <p>
                   Upload a PDF and let DocQuery help you understand it.
                 </p>
@@ -749,6 +968,14 @@ function App() {
                 >
                   {uploading ? "Uploading..." : "Choose a PDF"}
                 </button>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  hidden
+                  onChange={handleFileChange}
+                />
 
                 {file && (
                   <div className="selected-file">

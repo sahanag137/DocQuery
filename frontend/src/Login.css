@@ -4,7 +4,7 @@
   align-items: center;
   justify-content: center;
   padding: 30px 20px;
-  background: #f3f5ef;
+  background: #f3f6f8;
   font-family: 'DM Sans', sans-serif;
 }
 
@@ -13,9 +13,9 @@
   max-width: 440px;
   padding: 42px;
   background: #ffffff;
-  border: 1px solid #e6ebe3;
+  border: 1px solid #e2e9ed;
   border-radius: 18px;
-  box-shadow: 0 12px 40px rgba(35, 65, 46, 0.08);
+  box-shadow: 0 12px 40px rgba(23, 43, 58, 0.09);
 }
 
 .login-brand {
@@ -31,7 +31,7 @@
   justify-content: center;
   margin: 0 auto 12px;
   border-radius: 15px;
-  background: #24583d;
+  background: #172b3a;
   color: white;
   font-size: 27px;
   font-weight: 700;
@@ -39,13 +39,13 @@
 
 .login-brand h1 {
   margin: 0;
-  color: #24583d;
+  color: #172b3a;
   font-size: 25px;
 }
 
 .login-brand p {
   margin-top: 7px;
-  color: #849087;
+  color: #7c8992;
   font-size: 13px;
 }
 
@@ -55,13 +55,13 @@
 
 .login-heading h2 {
   margin: 0 0 8px;
-  color: #263b32;
+  color: #243746;
   font-size: 25px;
 }
 
 .login-heading p {
   margin: 0;
-  color: #849087;
+  color: #7c8992;
   font-size: 14px;
 }
 
@@ -79,7 +79,7 @@
 .login-card form label {
   display: block;
   margin-bottom: 9px;
-  color: #35483c;
+  color: #354956;
   font-size: 13px;
   font-weight: 600;
 }
@@ -89,22 +89,22 @@
   width: 100%;
   height: 48px;
   padding: 0 14px;
-  border: 1px solid #dce3dc;
+  border: 1px solid #dce4e9;
   border-radius: 9px;
   background: #fff;
-  color: #263b32;
+  color: #243746;
   font-size: 14px;
   outline: none;
   box-sizing: border-box;
 }
 
 .login-card input:focus {
-  border-color: #548367;
-  box-shadow: 0 0 0 3px rgba(84, 131, 103, 0.1);
+  border-color: #16a085;
+  box-shadow: 0 0 0 3px rgba(22, 160, 133, 0.1);
 }
 
 .login-card input::placeholder {
-  color: #aab2aa;
+  color: #aab4bb;
 }
 
 .login-card form > input {
@@ -121,7 +121,7 @@
 .show-password {
   border: none;
   background: transparent;
-  color: #39734f;
+  color: #138a78;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -147,7 +147,7 @@
   height: 49px;
   border: none;
   border-radius: 9px;
-  background: #24583d;
+  background: #172b3a;
   color: white;
   font-size: 15px;
   font-weight: 600;
@@ -155,8 +155,13 @@
   transition: background 0.2s ease;
 }
 
+<<<<<<< HEAD
 .login-button:hover:not(:disabled) {
   background: #19452e;
+=======
+.login-button:hover {
+  background: #16a085;
+>>>>>>> 09b71183d2ae901e26f21503c887fbbcafcd028b
 }
 
 .login-button:disabled {
@@ -167,12 +172,12 @@
 .login-footer {
   margin: 25px 0 0;
   text-align: center;
-  color: #849087;
+  color: #7c8992;
   font-size: 13px;
 }
 
 .login-footer span {
-  color: #39734f;
+  color: #138a78;
   font-weight: 600;
 }
 

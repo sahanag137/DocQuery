@@ -13,8 +13,11 @@ function Signup({ onSignup, onBackToLogin }) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
+<<<<<<< HEAD
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+=======
+>>>>>>> 09b71183d2ae901e26f21503c887fbbcafcd028b
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -40,6 +43,7 @@ function Signup({ onSignup, onBackToLogin }) {
       return;
     }
 
+<<<<<<< HEAD
     if (!/[A-Za-z]/.test(password)) {
       setError("Password must contain at least one letter.");
       return;
@@ -98,6 +102,17 @@ function Signup({ onSignup, onBackToLogin }) {
       }, 1200);
     } catch (err) {
       setError(err.message || "Unable to connect to the server. Please check your network.");
+=======
+    try {
+      setLoading(true);
+      await onSignup?.({
+        full_name: name.trim(),
+        email: email.trim(),
+        password,
+      });
+    } catch (error) {
+      alert(error.message || "Signup failed. Please try again.");
+>>>>>>> 09b71183d2ae901e26f21503c887fbbcafcd028b
     } finally {
       setLoading(false);
     }
@@ -174,7 +189,15 @@ function Signup({ onSignup, onBackToLogin }) {
             required
           />
 
+<<<<<<< HEAD
           <button type="submit" className="signup-button" disabled={loading}>
+=======
+          <button
+            type="submit"
+            className="signup-button"
+            disabled={loading}
+          >
+>>>>>>> 09b71183d2ae901e26f21503c887fbbcafcd028b
             {loading ? "Creating account..." : "Create account"}
           </button>
         </form>
