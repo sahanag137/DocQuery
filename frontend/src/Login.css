@@ -155,13 +155,8 @@
   transition: background 0.2s ease;
 }
 
-<<<<<<< HEAD
 .login-button:hover:not(:disabled) {
   background: #19452e;
-=======
-.login-button:hover {
-  background: #16a085;
->>>>>>> 09b71183d2ae901e26f21503c887fbbcafcd028b
 }
 
 .login-button:disabled {

@@ -129,24 +129,11 @@
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
-<<<<<<< HEAD
   transition: background-color 0.15s ease;
 }
 
 .signup-button:hover:not(:disabled) {
   background: #19452e;
-=======
-  transition: background 0.2s ease;
-}
-
-.signup-button:hover {
-  background: #16a085;
-}
-
-.signup-button:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
->>>>>>> 09b71183d2ae901e26f21503c887fbbcafcd028b
 }
 
 .signup-button:disabled {
