@@ -7,10 +7,11 @@ logout, and password recovery.
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.security import decode_access_token
 from app.database.connection import get_db
 from app.models.user import User
@@ -59,16 +60,17 @@ def _build_user_response(user: User) -> UserResponse:
 
 
 async def get_current_user(
+    request: Request,
     db: Session = Depends(get_db),
     bearer_token: Optional[str] = Depends(oauth2_scheme),
     token_query: Optional[str] = Query(None, alias="token"),
 ) -> User:
     """
     FastAPI dependency to extract and validate the JWT Bearer token.
-    Supports both Authorization: Bearer <token> header and ?token=<token>
-    query parameter (critical for browser PDF streaming / iframe views).
+    Supports Authorization: Bearer header, ?token= query parameter,
+    and HttpOnly access_token cookies.
     """
-    token = bearer_token or token_query
+    token = bearer_token or token_query or request.cookies.get("access_token")
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -129,24 +131,39 @@ def signup(
 @router.post("/login", response_model=TokenResponse)
 def login(
     login_data: LoginRequest,
+    response: Response,
     db: Session = Depends(get_db),
 ) -> TokenResponse:
     """
-    Authenticate a user with email and password and return a JWT access token.
+    Authenticate a user with email and password, return a JWT access token,
+    and set a secure HttpOnly session cookie.
     """
     user = auth_service.authenticate_user(db, login_data.email, login_data.password)
     token_resp = auth_service.create_user_tokens(user)
     token_resp.user = _build_user_response(user)
+
+    # Set HttpOnly cookie for secure session support
+    response.set_cookie(
+        key="access_token",
+        value=token_resp.access_token,
+        httponly=True,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        samesite="lax",
+        secure=False,  # Set True in HTTPS production
+        path="/",
+    )
     return token_resp
 
 
 @router.post("/logout", response_model=LogoutResponse)
 def logout(
+    response: Response,
     current_user: User = Depends(get_current_user),
 ) -> LogoutResponse:
     """
-    Log out the current user session.
+    Log out the current user session and clear authentication cookie.
     """
+    response.delete_cookie(key="access_token", path="/")
     return LogoutResponse(message="Successfully logged out.")
 
 

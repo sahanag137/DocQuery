@@ -36,12 +36,28 @@ def _resolve_physical_file(doc: Document) -> Path:
         if storage_path.is_file():
             return storage_path
 
-    # Check legacy data/documents directory
-    legacy_dir = settings.DOCUMENTS_DIR.parents[1] / "data" / "documents"
+    # Check matches in settings.DOCUMENTS_DIR by document_id or filename
     if doc.document_id:
-        matches = list(legacy_dir.glob(f"{doc.document_id}__*"))
+        matches = list(settings.DOCUMENTS_DIR.glob(f"{doc.document_id}*"))
         if matches and matches[0].is_file():
             return matches[0]
+
+    if doc.original_filename:
+        matches = list(settings.DOCUMENTS_DIR.glob(f"*{doc.original_filename}*"))
+        if matches and matches[0].is_file():
+            return matches[0]
+
+    # Check legacy data/documents directory
+    legacy_dir = settings.DOCUMENTS_DIR.parents[1] / "data" / "documents"
+    if legacy_dir.is_dir():
+        if doc.document_id:
+            matches = list(legacy_dir.glob(f"{doc.document_id}*"))
+            if matches and matches[0].is_file():
+                return matches[0]
+        if doc.original_filename:
+            matches = list(legacy_dir.glob(f"*{doc.original_filename}*"))
+            if matches and matches[0].is_file():
+                return matches[0]
 
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
@@ -62,12 +78,20 @@ async def upload_document(
     document = await document_service.save_uploaded_document(
         db=db, user_id=current_user.id, file=file
     )
+    doc_id = document.document_id or str(document.id)
+    resolved_name = document.original_filename or document.filename or file.filename or "Uploaded document"
+    resolved_mime = document.mime_type or document.file_type or "application/pdf"
+    resolved_status = document.processing_status or document.status or "uploaded"
+
     return DocumentUploadResponse(
         id=document.id,
-        document_id=document.document_id or str(document.id),
-        filename=document.original_filename,
-        file_type=document.mime_type,
-        status=document.processing_status,
+        document_id=doc_id,
+        filename=resolved_name,
+        original_filename=resolved_name,
+        file_type=resolved_mime,
+        mime_type=resolved_mime,
+        status=resolved_status,
+        processing_status=resolved_status,
         message="File uploaded successfully.",
     )
 

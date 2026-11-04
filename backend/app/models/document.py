@@ -30,10 +30,10 @@ class Document(Base):
     )
 
     # Core required fields
-    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
-    stored_filename: Mapped[str] = mapped_column(String(255), nullable=False)
-    file_path: Mapped[str] = mapped_column(String(512), nullable=False)
-    mime_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    stored_filename: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    file_path: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    mime_type: Mapped[str] = mapped_column(String(64), nullable=False, default="application/pdf")
     file_size: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # Status: uploaded, processing, processed, failed
@@ -42,6 +42,14 @@ class Document(Base):
     )
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, index=True, nullable=False
+    )
+
+    # Legacy compatibility columns present in existing SQLite databases
+    filename: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    file_type: Mapped[str] = mapped_column(String(32), nullable=False, default="pdf")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="uploaded")
+    upload_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
     )
 
     # Legacy compatibility identifier (UUID string)
@@ -55,38 +63,33 @@ class Document(Base):
         "ConversationDocument", back_populates="document", cascade="all, delete-orphan"
     )
 
-    # Backwards compatibility properties for existing modules
-    @property
-    def filename(self) -> str:
-        return self.original_filename
+    def __init__(self, **kwargs):
+        """Auto-populate legacy and modern fields simultaneously."""
+        # Filename synchronization
+        orig = kwargs.get("original_filename") or kwargs.get("filename") or ""
+        kwargs["original_filename"] = orig
+        kwargs["filename"] = orig
 
-    @filename.setter
-    def filename(self, val: str) -> None:
-        self.original_filename = val
+        # Mime type / file type synchronization
+        mime = kwargs.get("mime_type") or kwargs.get("file_type") or "application/pdf"
+        kwargs["mime_type"] = mime
+        kwargs["file_type"] = mime[:32]
 
-    @property
-    def file_type(self) -> str:
-        return self.mime_type
+        # Status synchronization
+        stat = kwargs.get("processing_status") or kwargs.get("status") or "uploaded"
+        kwargs["processing_status"] = stat
+        kwargs["status"] = stat
 
-    @file_type.setter
-    def file_type(self, val: str) -> None:
-        self.mime_type = val
+        # Timestamp synchronization
+        now_val = kwargs.get("uploaded_at") or kwargs.get("upload_date") or utcnow()
+        kwargs["uploaded_at"] = now_val
+        kwargs["upload_date"] = now_val
 
-    @property
-    def status(self) -> str:
-        return self.processing_status
+        # Ensure document_id
+        if "document_id" not in kwargs or not kwargs["document_id"]:
+            kwargs["document_id"] = uuid.uuid4().hex
 
-    @status.setter
-    def status(self, val: str) -> None:
-        self.processing_status = val
-
-    @property
-    def upload_date(self) -> datetime:
-        return self.uploaded_at
-
-    @upload_date.setter
-    def upload_date(self, val: datetime) -> None:
-        self.uploaded_at = val
+        super().__init__(**kwargs)
 
     def __repr__(self) -> str:
         return (

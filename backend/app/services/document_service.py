@@ -27,17 +27,26 @@ from app.utils.file_handler import (
 
 def _to_document_response(doc: Document) -> DocumentResponse:
     """Helper to convert Document ORM model to DocumentResponse schema."""
-    doc_identifier = str(doc.id)
+    doc_identifier = doc.document_id or str(doc.id)
+    resolved_name = doc.original_filename or doc.filename or "Untitled document"
+    resolved_mime = doc.mime_type or doc.file_type or "application/pdf"
+    resolved_status = doc.processing_status or doc.status or "uploaded"
+    resolved_date = doc.uploaded_at or doc.upload_date
+
     return DocumentResponse(
         id=doc.id,
-        document_id=doc.document_id or str(doc.id),
+        document_id=doc_identifier,
         user_id=doc.user_id,
-        original_filename=doc.original_filename,
-        stored_filename=doc.stored_filename,
-        mime_type=doc.mime_type,
-        file_size=doc.file_size,
-        processing_status=doc.processing_status,
-        uploaded_at=doc.uploaded_at,
+        original_filename=resolved_name,
+        filename=resolved_name,
+        stored_filename=doc.stored_filename or "",
+        mime_type=resolved_mime,
+        file_type=resolved_mime,
+        file_size=doc.file_size or 0,
+        processing_status=resolved_status,
+        status=resolved_status,
+        uploaded_at=resolved_date,
+        upload_date=resolved_date,
         view_url=f"/documents/{doc_identifier}/view",
         download_url=f"/documents/{doc_identifier}/download",
     )
@@ -94,11 +103,14 @@ async def save_uploaded_document(
         document = Document(
             user_id=user_id,
             original_filename=clean_name,
+            filename=clean_name,
             stored_filename=stored_filename,
             file_path=str(destination_path),
             mime_type=mime_type,
+            file_type=mime_type[:32],
             file_size=total_bytes,
             processing_status="uploaded",
+            status="uploaded",
             document_id=unique_id,
         )
         db.add(document)

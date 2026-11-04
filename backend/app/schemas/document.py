@@ -15,11 +15,15 @@ class DocumentResponse(BaseModel):
     document_id: Optional[str] = None
     user_id: Optional[int] = None
     original_filename: str
-    stored_filename: str
+    filename: Optional[str] = None
+    stored_filename: Optional[str] = ""
     mime_type: str
+    file_type: Optional[str] = None
     file_size: int
     processing_status: str
+    status: Optional[str] = None
     uploaded_at: datetime
+    upload_date: Optional[datetime] = None
     view_url: Optional[str] = None
     download_url: Optional[str] = None
 
@@ -31,8 +35,11 @@ class DocumentUploadResponse(BaseModel):
     id: int
     document_id: str
     filename: str
+    original_filename: Optional[str] = None
     file_type: str
+    mime_type: Optional[str] = None
     status: str
+    processing_status: Optional[str] = None
     message: str
 
     model_config = ConfigDict(from_attributes=True)

@@ -100,12 +100,16 @@ def _migrate_existing_tables() -> None:
             # Synchronize existing legacy columns if present
             if "filename" in cols:
                 conn.execute(text("UPDATE documents SET original_filename = filename WHERE (original_filename IS NULL OR original_filename = '') AND filename IS NOT NULL"))
+                conn.execute(text("UPDATE documents SET filename = original_filename WHERE (filename IS NULL OR filename = '') AND original_filename IS NOT NULL"))
             if "file_type" in cols:
                 conn.execute(text("UPDATE documents SET mime_type = file_type WHERE (mime_type IS NULL OR mime_type = '' OR mime_type = 'application/octet-stream') AND file_type IS NOT NULL"))
+                conn.execute(text("UPDATE documents SET file_type = mime_type WHERE (file_type IS NULL OR file_type = '') AND mime_type IS NOT NULL"))
             if "status" in cols:
                 conn.execute(text("UPDATE documents SET processing_status = status WHERE (processing_status IS NULL OR processing_status = '') AND status IS NOT NULL"))
+                conn.execute(text("UPDATE documents SET status = processing_status WHERE (status IS NULL OR status = '') AND processing_status IS NOT NULL"))
             if "upload_date" in cols:
                 conn.execute(text("UPDATE documents SET uploaded_at = upload_date WHERE uploaded_at IS NULL AND upload_date IS NOT NULL"))
+                conn.execute(text("UPDATE documents SET upload_date = uploaded_at WHERE upload_date IS NULL AND uploaded_at IS NOT NULL"))
 
             conn.commit()
 
