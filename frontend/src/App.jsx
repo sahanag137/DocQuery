@@ -101,90 +101,24 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // SIGNUP API
-  async function handleSignup(userData) {
-    setLoggingIn(true);
-
-    try {
-      const response = await fetch(`${API_URL}/auth/signup`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          full_name: userData.full_name,
-          email: userData.email,
-          password: userData.password,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        let errorMessage = "Unable to create account.";
-
-        if (typeof data.detail === "string") {
-          errorMessage = data.detail;
-        } else if (Array.isArray(data.detail)) {
-          errorMessage = data.detail
-            .map((item) => item.msg)
-            .join(", ");
-        }
-
-        throw new Error(errorMessage);
-      }
-
-      alert("Account created successfully! Please sign in.");
-      setAuthPage("login");
-    } catch (err) {
-      alert(err.message || "Signup failed. Please try again.");
-      throw err;
-    } finally {
-      setLoggingIn(false);
-    }
+  // SIGNUP — Signup.jsx handles its own fetch; this just receives the result
+  function handleSignup(_data) {
+    // Signup.jsx already called /auth/signup, showed success, and calls onBackToLogin().
+    // Nothing extra needed here.
   }
 
-  // LOGIN API
-  async function handleLogin(credentials) {
-    setLoggingIn(true);
-
-    try {
-      const response = await fetch(`${API_URL}/auth/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email: credentials.email,
-          password: credentials.password,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          typeof data.detail === "string"
-            ? data.detail
-            : "Invalid email or password."
-        );
-      }
-
-      if (!data.access_token) {
-        throw new Error("Login response did not contain an access token.");
-      }
-
-      localStorage.setItem("docquery_token", data.access_token);
-      localStorage.setItem("docquery_user", JSON.stringify(data.user || {}));
-
-      setCurrentUser(data.user || null);
-      setError("");
-      setIsLoggedIn(true);
-    } catch (err) {
-      alert(err.message || "Unable to login. Please try again.");
-    } finally {
-      setLoggingIn(false);
+  // LOGIN — Login.jsx handles the fetch and saves the token; this updates app state
+  function handleLogin(data) {
+    if (data?.user) {
+      setCurrentUser(data.user);
+    } else {
+      try {
+        const stored = localStorage.getItem("docquery_user");
+        if (stored) setCurrentUser(JSON.parse(stored));
+      } catch {}
     }
+    setError("");
+    setIsLoggedIn(true);
   }
 
   // LOAD DOCUMENTS
