@@ -29,15 +29,19 @@ def test_temp_dir() -> Generator[Path, None, None]:
         # Override storage directories in settings for tests
         orig_doc_dir = settings.DOCUMENTS_DIR
         orig_avatar_dir = settings.AVATARS_DIR
+        orig_storage_dir = settings.STORAGE_DIR
         settings.DOCUMENTS_DIR = tmp_path / "documents"
         settings.AVATARS_DIR = tmp_path / "avatars"
+        settings.STORAGE_DIR = tmp_path / "storage"
         settings.DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
         settings.AVATARS_DIR.mkdir(parents=True, exist_ok=True)
+        settings.STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
         yield tmp_path
 
         settings.DOCUMENTS_DIR = orig_doc_dir
         settings.AVATARS_DIR = orig_avatar_dir
+        settings.STORAGE_DIR = orig_storage_dir
 
 
 @pytest.fixture(scope="function")

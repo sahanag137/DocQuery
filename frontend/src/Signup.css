@@ -165,3 +165,27 @@
     padding: 30px 23px;
   }
 }
+
+/* Show Password Checkbox */
+.signup-show-password {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 18px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.signup-show-password input[type="checkbox"] {
+  width: 17px !important;
+  height: 17px !important;
+  min-width: 17px;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  accent-color: #172c3a;
+  appearance: auto;
+  flex-shrink: 0;
+}
+

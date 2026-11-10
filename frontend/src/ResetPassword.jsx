@@ -2,13 +2,19 @@
 import { useState } from "react";
 import "./ResetPassword.css";
 
-function ResetPassword({ onReset, onBackToLogin }) {
+function ResetPassword({ onReset, onBackToLogin, resetToken }) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [token, setToken] = useState(resetToken || "");
 
   const handleSubmit = (event) => {
     event.preventDefault();
+
+    if (!token.trim()) {
+      alert("Reset token is required.");
+      return;
+    }
 
     if (password.length < 8) {
       alert("Password must contain at least 8 characters.");
@@ -20,7 +26,7 @@ function ResetPassword({ onReset, onBackToLogin }) {
       return;
     }
 
-    onReset?.({ password });
+    onReset?.({ password, token });
   };
 
   return (
@@ -38,6 +44,16 @@ function ResetPassword({ onReset, onBackToLogin }) {
         </p>
 
         <form onSubmit={handleSubmit}>
+          <label htmlFor="reset-token">Reset token</label>
+          <input
+            id="reset-token"
+            type="text"
+            placeholder="Enter your reset token"
+            value={token}
+            onChange={(event) => setToken(event.target.value)}
+            required
+          />
+
           <label htmlFor="new-password">New password</label>
           <input
             id="new-password"
@@ -49,7 +65,9 @@ function ResetPassword({ onReset, onBackToLogin }) {
             required
           />
 
-          <label htmlFor="confirm-new-password">Confirm new password</label>
+          <label htmlFor="confirm-new-password">
+            Confirm new password
+          </label>
           <input
             id="confirm-new-password"
             type={showPassword ? "text" : "password"}

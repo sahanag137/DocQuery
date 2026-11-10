@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import "./Signup.css";
 
@@ -15,6 +16,7 @@ function Signup({ onSignup, onBackToLogin }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -62,7 +64,7 @@ function Signup({ onSignup, onBackToLogin }) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Accept": "application/json",
+          Accept: "application/json",
         },
         body: JSON.stringify({
           full_name: trimmedName,
@@ -74,12 +76,16 @@ function Signup({ onSignup, onBackToLogin }) {
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        let errorMessage = "Registration failed. Please check your information.";
+        let errorMessage =
+          "Registration failed. Please check your information.";
 
         if (data && data.detail) {
           if (typeof data.detail === "string") {
             errorMessage = data.detail;
-          } else if (Array.isArray(data.detail) && data.detail.length > 0) {
+          } else if (
+            Array.isArray(data.detail) &&
+            data.detail.length > 0
+          ) {
             errorMessage = data.detail
               .map((err) => err.msg || err.detail || JSON.stringify(err))
               .join(", ");
@@ -89,7 +95,10 @@ function Signup({ onSignup, onBackToLogin }) {
         throw new Error(errorMessage);
       }
 
-      setSuccess("Account created successfully! Redirecting to sign in...");
+      setSuccess(
+        "Account created successfully! Redirecting to sign in..."
+      );
+
       onSignup?.(data);
 
       // Redirect user to the Login page
@@ -97,7 +106,10 @@ function Signup({ onSignup, onBackToLogin }) {
         onBackToLogin?.();
       }, 1200);
     } catch (err) {
-      setError(err.message || "Unable to connect to the server. Please check your network.");
+      setError(
+        err.message ||
+          "Unable to connect to the server. Please check your network."
+      );
     } finally {
       setLoading(false);
     }
@@ -155,7 +167,7 @@ function Signup({ onSignup, onBackToLogin }) {
           <label htmlFor="signup-password">Password</label>
           <input
             id="signup-password"
-            type="password"
+            type={showPassword ? "text" : "password"}
             placeholder="Create a password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -166,7 +178,7 @@ function Signup({ onSignup, onBackToLogin }) {
           <label htmlFor="confirm-password">Confirm password</label>
           <input
             id="confirm-password"
-            type="password"
+            type={showPassword ? "text" : "password"}
             placeholder="Enter your password again"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
@@ -174,14 +186,33 @@ function Signup({ onSignup, onBackToLogin }) {
             required
           />
 
-          <button type="submit" className="signup-button" disabled={loading}>
+          {/* Show / Hide Password */}
+          <label className="signup-show-password">
+            <input
+              type="checkbox"
+              checked={showPassword}
+              onChange={(e) => setShowPassword(e.target.checked)}
+              disabled={loading}
+            />
+            Show password
+          </label>
+
+          <button
+            type="submit"
+            className="signup-button"
+            disabled={loading}
+          >
             {loading ? "Creating account..." : "Create account"}
           </button>
         </form>
 
         <p className="signup-footer">
           Already have an account?{" "}
-          <button type="button" onClick={onBackToLogin} disabled={loading}>
+          <button
+            type="button"
+            onClick={onBackToLogin}
+            disabled={loading}
+          >
             Sign in
           </button>
         </p>

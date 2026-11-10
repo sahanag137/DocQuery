@@ -12,7 +12,7 @@ const API_URL =
   "http://127.0.0.1:8000";
 
 function App() {
-  // Always show Login when the application starts.
+  // AUTHENTICATION
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authPage, setAuthPage] = useState("login");
   const [currentUser, setCurrentUser] = useState(() => {
@@ -24,13 +24,21 @@ function App() {
     }
   });
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [resetToken, setResetToken] = useState("");
 
+  // DOCUMENT AND CONVERSATION STATE
   const [file, setFile] = useState(null);
   const [documentId, setDocumentId] = useState("");
+  const [conversationId, setConversationId] = useState(null);
+  const [attachedDocumentId, setAttachedDocumentId] = useState("");
   const [documents, setDocuments] = useState([]);
+
+  // CHAT STATE
   const [searchTerm, setSearchTerm] = useState("");
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState([]);
+
+  // LOADING AND UI STATE
   const [uploading, setUploading] = useState(false);
   const [asking, setAsking] = useState(false);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
@@ -38,7 +46,6 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeTab, setActiveTab] = useState("chat");
   const [zoom, setZoom] = useState(100);
-  const [loggingIn, setLoggingIn] = useState(false);
 
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -47,21 +54,102 @@ function App() {
   function getAuthHeaders(extraHeaders = {}) {
     const token = localStorage.getItem("docquery_token");
     const headers = { ...extraHeaders };
+
     if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
+      headers.Authorization = `Bearer ${token}`;
     }
+
     return headers;
+  }
+
+  // DISPLAY ERROR MESSAGE FROM API
+  function getApiErrorMessage(data, fallback) {
+    const detail = data?.detail;
+
+    if (Array.isArray(detail)) {
+      return detail
+        .map((item) => item.msg || JSON.stringify(item))
+        .join(", ");
+    }
+
+    return typeof detail === "string" ? detail : fallback;
+  }
+
+  // CREATE OR REUSE CONVERSATION AND ATTACH DOCUMENT
+  async function getOrCreateConversation(docId) {
+    let activeConversationId = conversationId;
+
+    // Create conversation if one does not exist.
+    if (!activeConversationId) {
+      const createResponse = await fetch(`${API_URL}/chats`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        credentials: "include",
+      });
+
+      const createData = await createResponse.json();
+
+      if (!createResponse.ok) {
+        throw new Error(
+          typeof createData.detail === "string"
+            ? createData.detail
+            : "Unable to create a conversation."
+        );
+      }
+
+      activeConversationId = createData.id;
+
+      if (!activeConversationId) {
+        throw new Error("Conversation ID was not returned by the server.");
+      }
+
+      setConversationId(activeConversationId);
+    }
+
+    // Attach document if it is not already attached.
+    if (attachedDocumentId !== String(docId)) {
+      const attachResponse = await fetch(
+        `${API_URL}/chats/${activeConversationId}/documents`,
+        {
+          method: "POST",
+          headers: getAuthHeaders({
+            "Content-Type": "application/json",
+          }),
+          credentials: "include",
+          body: JSON.stringify({
+            document_id: String(docId),
+          }),
+        }
+      );
+
+      const attachData = await attachResponse.json();
+
+      if (!attachResponse.ok) {
+        throw new Error(
+          typeof attachData.detail === "string"
+            ? attachData.detail
+            : "Unable to attach the document to the conversation."
+        );
+      }
+
+      setAttachedDocumentId(String(docId));
+    }
+
+    return activeConversationId;
   }
 
   // VERIFY SESSION ON MOUNT
   useEffect(() => {
     async function verifySession() {
       const token = localStorage.getItem("docquery_token");
+
       try {
         const headers = {};
+
         if (token) {
-          headers["Authorization"] = `Bearer ${token}`;
+          headers.Authorization = `Bearer ${token}`;
         }
+
         const response = await fetch(`${API_URL}/auth/me`, {
           method: "GET",
           headers,
@@ -70,12 +158,18 @@ function App() {
 
         if (response.ok) {
           const userData = await response.json();
+
           setCurrentUser(userData);
           setIsLoggedIn(true);
-          localStorage.setItem("docquery_user", JSON.stringify(userData));
+
+          localStorage.setItem(
+            "docquery_user",
+            JSON.stringify(userData)
+          );
         } else {
           localStorage.removeItem("docquery_token");
           localStorage.removeItem("docquery_user");
+
           setIsLoggedIn(false);
           setCurrentUser(null);
         }
@@ -98,25 +192,31 @@ function App() {
 
   // AUTO SCROLL CHAT
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+    });
   }, [messages]);
 
-  // SIGNUP — Signup.jsx handles its own fetch; this just receives the result
-  function handleSignup(_data) {
-    // Signup.jsx already called /auth/signup, showed success, and calls onBackToLogin().
-    // Nothing extra needed here.
+  // SIGNUP
+  function handleSignup() {
+    // Signup.jsx handles its own API request.
   }
 
-  // LOGIN — Login.jsx handles the fetch and saves the token; this updates app state
+  // LOGIN
   function handleLogin(data) {
     if (data?.user) {
       setCurrentUser(data.user);
     } else {
       try {
         const stored = localStorage.getItem("docquery_user");
-        if (stored) setCurrentUser(JSON.parse(stored));
-      } catch {}
+        if (stored) {
+          setCurrentUser(JSON.parse(stored));
+        }
+      } catch {
+        // Ignore invalid stored user data.
+      }
     }
+
     setError("");
     setIsLoggedIn(true);
   }
@@ -147,13 +247,19 @@ function App() {
     }
   }
 
-  // PDF / DOCUMENT FILE VALIDATION
+  // FILE VALIDATION
   function handleFileChange(event) {
     const selected = event.target.files?.[0];
 
     if (!selected) return;
 
-    const allowedExtensions = [".pdf", ".txt", ".md", ".markdown"];
+    const allowedExtensions = [
+      ".pdf",
+      ".txt",
+      ".md",
+      ".markdown",
+    ];
+
     const hasValidExt = allowedExtensions.some((ext) =>
       selected.name.toLowerCase().endsWith(ext)
     );
@@ -164,7 +270,9 @@ function App() {
       selected.type !== "text/plain" &&
       selected.type !== "text/markdown"
     ) {
-      setError("Please select a supported document (PDF, TXT, or Markdown).");
+      setError(
+        "Please select a supported document (PDF, TXT, or Markdown)."
+      );
       event.target.value = "";
       return;
     }
@@ -178,19 +286,29 @@ function App() {
     setError("");
     setFile(selected);
     setDocumentId("");
+    setConversationId(null);
+    setAttachedDocumentId("");
     setMessages([]);
+
     event.target.value = "";
   }
 
-  // CORE UPLOAD FUNCTION
+  // UPLOAD DOCUMENT
   async function uploadFile(fileToUpload) {
     const targetFile = fileToUpload || file;
+
     if (!targetFile) {
       setError("Please select a document first.");
       return null;
     }
 
-    console.log("[DocQuery] Starting upload:", targetFile.name, targetFile.size, "bytes");
+    console.log(
+      "[DocQuery] Starting upload:",
+      targetFile.name,
+      targetFile.size,
+      "bytes"
+    );
+
     setUploading(true);
     setError("");
 
@@ -200,41 +318,54 @@ function App() {
 
       const token = localStorage.getItem("docquery_token");
       const headers = {};
+
       if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
+        headers.Authorization = `Bearer ${token}`;
       }
 
-      console.log("[DocQuery] POST", `${API_URL}/documents/upload`, "token present:", !!token);
-
-      const response = await fetch(`${API_URL}/documents/upload`, {
-        method: "POST",
-        headers,
-        credentials: "include",
-        body: formData,
-      });
-
-      console.log("[DocQuery] Upload response status:", response.status);
+      const response = await fetch(
+        `${API_URL}/documents/upload`,
+        {
+          method: "POST",
+          headers,
+          credentials: "include",
+          body: formData,
+        }
+      );
 
       const data = await response.json();
-      console.log("[DocQuery] Upload response data:", data);
 
       if (!response.ok) {
         throw new Error(
-          data.detail || "Document upload failed. Please try again."
+          typeof data.detail === "string"
+            ? data.detail
+            : "Document upload failed. Please try again."
         );
       }
 
       const uploadedId = data.document_id || data.id;
 
       if (!uploadedId) {
-        throw new Error("Upload response did not contain a document ID.");
+        throw new Error(
+          "Upload response did not contain a document ID."
+        );
       }
 
       const resolvedId = String(uploadedId);
+
       setFile(targetFile);
       setDocumentId(resolvedId);
+      setConversationId(null);
+      setAttachedDocumentId("");
+      setMessages([]);
+
       await loadDocuments();
-      console.log("[DocQuery] Upload complete. Document ID:", resolvedId);
+
+      console.log(
+        "[DocQuery] Upload complete. Document ID:",
+        resolvedId
+      );
+
       return resolvedId;
     } catch (err) {
       console.error("[DocQuery] Upload failed:", err);
@@ -257,7 +388,9 @@ function App() {
     const trimmedQuestion = question.trim();
 
     if (!documentId) {
-      setError("Upload and finish processing a document before asking questions.");
+      setError(
+        "Upload and finish processing a document before asking questions."
+      );
       return;
     }
 
@@ -282,15 +415,24 @@ function App() {
     setAsking(true);
 
     try {
+      // STEP 1: Create conversation and attach document.
+      const activeConversationId =
+        await getOrCreateConversation(documentId);
+
+      // STEP 2: Query using the INTEGER conversation ID.
       const response = await fetch(
-        `${API_URL}/query/${encodeURIComponent(documentId)}`,
+        `${API_URL}/query/${encodeURIComponent(
+          activeConversationId
+        )}`,
         {
           method: "POST",
-          headers: getAuthHeaders({ "Content-Type": "application/json" }),
+          headers: getAuthHeaders({
+            "Content-Type": "application/json",
+          }),
           credentials: "include",
           body: JSON.stringify({
             question: trimmedQuestion,
-            top_k: 5,
+            top_k: 10,
           }),
         }
       );
@@ -298,9 +440,12 @@ function App() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.detail || "Unable to get an answer.");
+        throw new Error(
+          getApiErrorMessage(data, "Unable to get an answer.")
+        );
       }
 
+      // STEP 3: Display answer and sources.
       setMessages((previous) =>
         previous.map((message) =>
           message.id === messageId
@@ -314,6 +459,8 @@ function App() {
         )
       );
     } catch (err) {
+      console.error("[DocQuery] Question error:", err);
+
       setMessages((previous) =>
         previous.map((message) =>
           message.id === messageId
@@ -331,19 +478,119 @@ function App() {
     }
   }
 
+  // SUMMARIZE THE SELECTED DOCUMENT
+  async function handleSummarize() {
+    if (!documentId || asking) return;
+
+    setError("");
+    setQuestion("");
+
+    const messageId = Date.now();
+
+    setMessages((previous) => [
+      ...previous,
+      {
+        id: messageId,
+        question: "Summarize this document",
+        answer: "",
+        sources: [],
+        loading: true,
+        isSummary: true,
+      },
+    ]);
+
+    setAsking(true);
+
+    try {
+      // STEP 1: Create conversation and attach document.
+      const activeConversationId =
+        await getOrCreateConversation(documentId);
+
+      // STEP 2: Call the dedicated summarization endpoint.
+      const response = await fetch(
+        `${API_URL}/query/${encodeURIComponent(
+          activeConversationId
+        )}/summarize/${encodeURIComponent(documentId)}`,
+        {
+          method: "POST",
+          headers: getAuthHeaders(),
+          credentials: "include",
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          getApiErrorMessage(
+            data,
+            "Unable to summarize the document."
+          )
+        );
+      }
+
+      // STEP 3: Display summary and sources.
+      setMessages((previous) =>
+        previous.map((message) =>
+          message.id === messageId
+            ? {
+                ...message,
+                answer: data.answer,
+                sources: data.sources || [],
+                loading: false,
+              }
+            : message
+        )
+      );
+    } catch (err) {
+      console.error("[DocQuery] Summarization error:", err);
+
+      setMessages((previous) =>
+        previous.map((message) =>
+          message.id === messageId
+            ? {
+                ...message,
+                answer: `Unable to summarize the document: ${err.message}`,
+                loading: false,
+                failed: true,
+              }
+            : message
+        )
+      );
+    } finally {
+      setAsking(false);
+    }
+  }
+
+  // HANDLE SUGGESTION BUTTONS
+  function handleSuggestion(suggestion) {
+    if (suggestion === "Summarize this document") {
+      handleSummarize();
+    } else {
+      setQuestion(suggestion);
+    }
+  }
+
   // SELECT A DOCUMENT
   function selectDocument(document) {
     const id = document.document_id || document.id;
 
     setDocumentId(String(id));
+    setConversationId(null);
+    setAttachedDocumentId("");
     setFile(null);
     setMessages([]);
+    setQuestion("");
     setError("");
   }
 
-  // DELETE A DOCUMENT
+  // DELETE DOCUMENT
   async function deleteDocument(id) {
-    if (!window.confirm("Are you sure you want to delete this document?")) {
+    if (
+      !window.confirm(
+        "Are you sure you want to delete this document?"
+      )
+    ) {
       return;
     }
 
@@ -359,13 +606,21 @@ function App() {
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.detail || "Unable to delete document.");
+
+        throw new Error(
+          typeof data.detail === "string"
+            ? data.detail
+            : "Unable to delete document."
+        );
       }
 
       if (String(id) === documentId) {
         setDocumentId("");
+        setConversationId(null);
+        setAttachedDocumentId("");
         setFile(null);
         setMessages([]);
+        setQuestion("");
       }
 
       await loadDocuments();
@@ -378,6 +633,8 @@ function App() {
   function newChat() {
     setMessages([]);
     setQuestion("");
+    setConversationId(null);
+    setAttachedDocumentId("");
     setError("");
     setActiveTab("chat");
   }
@@ -402,11 +659,15 @@ function App() {
     } finally {
       localStorage.removeItem("docquery_token");
       localStorage.removeItem("docquery_user");
+
       setIsLoggedIn(false);
       setCurrentUser(null);
       setAuthPage("login");
+
       setFile(null);
       setDocumentId("");
+      setConversationId(null);
+      setAttachedDocumentId("");
       setDocuments([]);
       setSearchTerm("");
       setMessages([]);
@@ -416,38 +677,63 @@ function App() {
     }
   }
 
-  // FILTERED DOCUMENT LIST
+  // FILTER DOCUMENTS
   const filteredDocuments = documents.filter((document) => {
     const name =
-      document.filename || document.original_filename || "Untitled document";
-    return name.toLowerCase().includes(searchTerm.trim().toLowerCase());
+      document.filename ||
+      document.original_filename ||
+      "Untitled document";
+
+    return name
+      .toLowerCase()
+      .includes(searchTerm.trim().toLowerCase());
   });
 
   const selectedDocument = documents.find(
     (document) =>
-      String(document.document_id || document.id) === String(documentId)
+      String(document.document_id || document.id) ===
+      String(documentId)
   );
 
   const pdfUrl = file ? URL.createObjectURL(file) : null;
 
   useEffect(() => {
     return () => {
-      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+      if (pdfUrl) {
+        URL.revokeObjectURL(pdfUrl);
+      }
     };
   }, [pdfUrl]);
 
   const authToken = localStorage.getItem("docquery_token");
+
   const viewUrl = file
     ? `${pdfUrl}#zoom=${zoom}`
     : documentId
-    ? `${API_URL}/documents/${encodeURIComponent(documentId)}/view?token=${encodeURIComponent(authToken || "")}#zoom=${zoom}`
+    ? `${API_URL}/documents/${encodeURIComponent(
+        documentId
+      )}/view?token=${encodeURIComponent(
+        authToken || ""
+      )}#zoom=${zoom}`
     : null;
 
   // AUTHENTICATION PAGES
   if (checkingAuth) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f3f5ef", fontFamily: "'DM Sans', sans-serif", color: "#24583d" }}>
-        <p style={{ fontWeight: 600 }}>Loading workspace...</p>
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#f3f5ef",
+          fontFamily: "'DM Sans', sans-serif",
+          color: "#24583d",
+        }}
+      >
+        <p style={{ fontWeight: 600 }}>
+          Loading workspace...
+        </p>
       </div>
     );
   }
@@ -462,29 +748,105 @@ function App() {
       );
     }
 
+    // FORGOT PASSWORD
     if (authPage === "forgot") {
       return (
         <ForgotPassword
           onBackToLogin={() => setAuthPage("login")}
-          onResetPassword={(email) => {
-            console.log("Password reset requested for:", email);
-            alert(
-              "Password reset API connection is pending. Opening the reset page for frontend testing."
-            );
-            setAuthPage("reset");
+          onResetPassword={async (email) => {
+            try {
+              const response = await fetch(
+                `${API_URL}/auth/forgot-password`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  credentials: "include",
+                  body: JSON.stringify({ email }),
+                }
+              );
+
+              const data = await response.json();
+
+              if (!response.ok) {
+                throw new Error(
+                  getApiErrorMessage(
+                    data,
+                    "Unable to generate reset instructions."
+                  )
+                );
+              }
+
+              if (!data.reset_token) {
+                alert(
+                  data.message ||
+                    "If an account exists with this email, reset instructions have been generated."
+                );
+                return;
+              }
+
+              setResetToken(data.reset_token);
+              setAuthPage("reset");
+
+              alert(
+                "Reset token generated successfully. Enter your new password."
+              );
+            } catch (err) {
+              alert(
+                err.message || "Password reset request failed."
+              );
+            }
           }}
         />
       );
     }
 
+    // RESET PASSWORD
     if (authPage === "reset") {
       return (
         <ResetPassword
+          resetToken={resetToken}
           onBackToLogin={() => setAuthPage("login")}
-          onReset={(passwordData) => {
-            console.log("New password submitted:", passwordData);
-            alert("Reset Password API connection is pending.");
-            setAuthPage("login");
+          onReset={async (passwordData) => {
+            try {
+              const response = await fetch(
+                `${API_URL}/auth/reset-password`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  credentials: "include",
+                  body: JSON.stringify({
+                    token: passwordData.token,
+                    new_password: passwordData.password,
+                  }),
+                }
+              );
+
+              const data = await response.json();
+
+              if (!response.ok) {
+                throw new Error(
+                  getApiErrorMessage(
+                    data,
+                    "Unable to reset your password."
+                  )
+                );
+              }
+
+              alert(
+                data.message || "Password reset successfully!"
+              );
+
+              setResetToken("");
+              setAuthPage("login");
+            } catch (err) {
+              alert(
+                err.message || "Password reset failed."
+              );
+            }
           }}
         />
       );
@@ -502,7 +864,11 @@ function App() {
   // MAIN DASHBOARD
   return (
     <div className="app-shell">
-      <aside className={`sidebar ${sidebarOpen ? "" : "sidebar-closed"}`}>
+      <aside
+        className={`sidebar ${
+          sidebarOpen ? "" : "sidebar-closed"
+        }`}
+      >
         <div className="brand">
           <div className="brand-icon">D</div>
 
@@ -514,16 +880,23 @@ function App() {
           )}
         </div>
 
-        <button className="new-chat-button" onClick={newChat}>
+        <button
+          className="new-chat-button"
+          onClick={newChat}
+        >
           <span>＋</span>
           {sidebarOpen && "New conversation"}
         </button>
 
         <div className="sidebar-section">
-          {sidebarOpen && <p className="sidebar-heading">WORKSPACE</p>}
+          {sidebarOpen && (
+            <p className="sidebar-heading">WORKSPACE</p>
+          )}
 
           <button
-            className={`sidebar-link ${activeTab === "chat" ? "active" : ""}`}
+            className={`sidebar-link ${
+              activeTab === "chat" ? "active" : ""
+            }`}
             onClick={() => setActiveTab("chat")}
           >
             <span>◫</span>
@@ -543,18 +916,26 @@ function App() {
 
         {sidebarOpen && (
           <div className="sidebar-section recent-section">
-            <p className="sidebar-heading">RECENT DOCUMENTS</p>
+            <p className="sidebar-heading">
+              RECENT DOCUMENTS
+            </p>
 
             {loadingDocuments && (
-              <p className="sidebar-muted">Loading documents...</p>
+              <p className="sidebar-muted">
+                Loading documents...
+              </p>
             )}
 
             {!loadingDocuments && documents.length === 0 && (
-              <p className="sidebar-muted">No documents uploaded yet.</p>
+              <p className="sidebar-muted">
+                No documents uploaded yet.
+              </p>
             )}
 
             {documents.map((document) => {
-              const id = document.document_id || document.id;
+              const id =
+                document.document_id || document.id;
+
               const docName =
                 document.filename ||
                 document.original_filename ||
@@ -563,20 +944,29 @@ function App() {
               return (
                 <button
                   className={`recent-document ${
-                    String(id) === String(documentId) ? "selected" : ""
+                    String(id) === String(documentId)
+                      ? "selected"
+                      : ""
                   }`}
                   key={id}
                   onClick={() => selectDocument(document)}
                   title={docName}
                 >
                   <span className="pdf-small">
-                    {(document.file_type || document.mime_type || "pdf")
+                    {(
+                      document.file_type ||
+                      document.mime_type ||
+                      "pdf"
+                    )
                       .toLowerCase()
                       .includes("pdf")
                       ? "PDF"
                       : "DOC"}
                   </span>
-                  <span className="recent-name">{docName}</span>
+
+                  <span className="recent-name">
+                    {docName}
+                  </span>
                 </button>
               );
             })}
@@ -588,8 +978,12 @@ function App() {
 
           {sidebarOpen && (
             <div className="profile-info">
-              <strong>{currentUser?.full_name || "My Workspace"}</strong>
-              <span>{currentUser?.email || "Personal account"}</span>
+              <strong>
+                {currentUser?.full_name || "My Workspace"}
+              </strong>
+              <span>
+                {currentUser?.email || "Personal account"}
+              </span>
             </div>
           )}
 
@@ -614,10 +1008,14 @@ function App() {
               ☰
             </button>
 
-            <span className="breadcrumb">Workspace / </span>
+            <span className="breadcrumb">
+              Workspace /
+            </span>
 
             <strong>
-              {activeTab === "documents" ? "Documents" : "AI Assistant"}
+              {activeTab === "documents"
+                ? "Documents"
+                : "AI Assistant"}
             </strong>
           </div>
 
@@ -630,11 +1028,13 @@ function App() {
         {error && (
           <div className="error-banner">
             <span>{error}</span>
-            <button onClick={() => setError("")}>×</button>
+            <button onClick={() => setError("")}>
+              ×
+            </button>
           </div>
         )}
 
-        {/* Hidden file input — always in DOM so both tabs can trigger it */}
+        {/* Hidden file input */}
         <input
           ref={fileInputRef}
           type="file"
@@ -647,9 +1047,13 @@ function App() {
           <section className="documents-page">
             <div className="page-heading">
               <div>
-                <span className="eyebrow">YOUR LIBRARY</span>
+                <span className="eyebrow">
+                  YOUR LIBRARY
+                </span>
                 <h1>My Documents</h1>
-                <p>Manage your uploaded PDF documents.</p>
+                <p>
+                  Manage your uploaded PDF documents.
+                </p>
               </div>
 
               <button
@@ -657,7 +1061,9 @@ function App() {
                 disabled={uploading}
                 onClick={() => fileInputRef.current?.click()}
               >
-                {uploading ? "Uploading..." : "＋ Upload PDF"}
+                {uploading
+                  ? "Uploading..."
+                  : "＋ Upload PDF"}
               </button>
             </div>
 
@@ -666,17 +1072,22 @@ function App() {
                 type="text"
                 placeholder="Search documents by filename..."
                 value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
+                onChange={(event) =>
+                  setSearchTerm(event.target.value)
+                }
               />
             </div>
 
             <div className="document-grid">
               {filteredDocuments.map((document) => {
-                const id = document.document_id || document.id;
+                const id =
+                  document.document_id || document.id;
+
                 const docName =
                   document.filename ||
                   document.original_filename ||
                   "Untitled document";
+
                 const isPdf = (
                   document.file_type ||
                   document.mime_type ||
@@ -684,8 +1095,11 @@ function App() {
                 )
                   .toLowerCase()
                   .includes("pdf");
+
                 const docDate =
-                  document.upload_date || document.uploaded_at;
+                  document.upload_date ||
+                  document.uploaded_at;
+
                 const docStatus =
                   document.status ||
                   document.processing_status ||
@@ -694,7 +1108,9 @@ function App() {
                 return (
                   <div className="document-card" key={id}>
                     <div className="document-card-top">
-                      <div className="pdf-icon">{isPdf ? "PDF" : "DOC"}</div>
+                      <div className="pdf-icon">
+                        {isPdf ? "PDF" : "DOC"}
+                      </div>
 
                       <span
                         className={`document-status ${
@@ -709,7 +1125,9 @@ function App() {
 
                     <p>
                       {docDate
-                        ? new Date(docDate).toLocaleDateString()
+                        ? new Date(
+                            docDate
+                          ).toLocaleDateString()
                         : "Date unavailable"}
                     </p>
 
@@ -757,11 +1175,15 @@ function App() {
           <section className="workspace">
             <div className="workspace-heading">
               <div>
-                <span className="eyebrow">YOUR AI READING SPACE</span>
+                <span className="eyebrow">
+                  YOUR AI READING SPACE
+                </span>
+
                 <h1>Chat with your documents.</h1>
+
                 <p>
-                  Upload a PDF, explore its contents and get answers with
-                  document references.
+                  Upload a PDF, explore its contents and get
+                  answers with document references.
                 </p>
               </div>
             </div>
@@ -769,10 +1191,12 @@ function App() {
             {!documentId && (
               <div className="upload-panel">
                 <div className="upload-symbol">↑</div>
+
                 <h2>Start with a document</h2>
 
                 <p>
-                  Upload a PDF and let DocQuery help you understand it.
+                  Upload a PDF and let DocQuery help you
+                  understand it.
                 </p>
 
                 <button
@@ -786,7 +1210,11 @@ function App() {
                 {file && (
                   <div className="selected-file">
                     <span className="pdf-icon">
-                      {file.name.toLowerCase().endsWith(".pdf") ? "PDF" : "DOC"}
+                      {file.name
+                        .toLowerCase()
+                        .endsWith(".pdf")
+                        ? "PDF"
+                        : "DOC"}
                     </span>
 
                     <div>
@@ -830,7 +1258,11 @@ function App() {
             {documentId && (
               <div className="active-document-bar">
                 <div className="pdf-icon">
-                  {(selectedDocument?.file_type || selectedDocument?.mime_type || "pdf")
+                  {(
+                    selectedDocument?.file_type ||
+                    selectedDocument?.mime_type ||
+                    "pdf"
+                  )
                     .toLowerCase()
                     .includes("pdf")
                     ? "PDF"
@@ -845,15 +1277,20 @@ function App() {
                       "Selected document"}
                   </strong>
 
-                  <span>Document selected for this conversation</span>
+                  <span>
+                    Document selected for this conversation
+                  </span>
                 </div>
 
                 <button
                   className="text-button"
                   onClick={() => {
                     setDocumentId("");
+                    setConversationId(null);
+                    setAttachedDocumentId("");
                     setFile(null);
                     setMessages([]);
+                    setQuestion("");
                     setError("");
                   }}
                 >
@@ -873,7 +1310,9 @@ function App() {
                   <div className="viewer-tools">
                     <button
                       onClick={() =>
-                        setZoom((value) => Math.max(50, value - 10))
+                        setZoom((value) =>
+                          Math.max(50, value - 10)
+                        )
                       }
                       title="Zoom out"
                     >
@@ -884,7 +1323,9 @@ function App() {
 
                     <button
                       onClick={() =>
-                        setZoom((value) => Math.min(150, value + 10))
+                        setZoom((value) =>
+                          Math.min(150, value + 10)
+                        )
                       }
                       title="Zoom in"
                     >
@@ -896,9 +1337,16 @@ function App() {
                 <div className="viewer-content">
                   {uploading && (
                     <div className="viewer-empty">
-                      <div className="pdf-icon large">⏳</div>
+                      <div className="pdf-icon large">
+                        ⏳
+                      </div>
+
                       <h3>Uploading document...</h3>
-                      <p>Saving and preparing your document for reading.</p>
+
+                      <p>
+                        Saving and preparing your document for
+                        reading.
+                      </p>
                     </div>
                   )}
 
@@ -913,9 +1361,18 @@ function App() {
 
                   {!uploading && !viewUrl && (
                     <div className="viewer-empty">
-                      <div className="viewer-empty-icon">▤</div>
-                      <h3>Your document will appear here</h3>
-                      <p>Upload a PDF or select an existing document to view its contents.</p>
+                      <div className="viewer-empty-icon">
+                        ▤
+                      </div>
+
+                      <h3>
+                        Your document will appear here
+                      </h3>
+
+                      <p>
+                        Upload a PDF or select an existing
+                        document to view its contents.
+                      </p>
                     </div>
                   )}
                 </div>
@@ -928,18 +1385,26 @@ function App() {
                     <strong>AI Assistant</strong>
                   </div>
 
-                  <span className="ai-label">RAG POWERED</span>
+                  <span className="ai-label">
+                    RAG POWERED
+                  </span>
                 </div>
 
                 <div className="chat-messages">
                   {messages.length === 0 && (
                     <div className="chat-welcome">
-                      <div className="assistant-avatar">✦</div>
-                      <h3>What would you like to know?</h3>
+                      <div className="assistant-avatar">
+                        ✦
+                      </div>
+
+                      <h3>
+                        What would you like to know?
+                      </h3>
 
                       <p>
-                        Ask questions about your uploaded document. I'll use
-                        its content to prepare an answer.
+                        Ask questions about your uploaded
+                        document. I'll use its content to
+                        prepare an answer.
                       </p>
 
                       <div className="suggestion-list">
@@ -950,8 +1415,10 @@ function App() {
                         ].map((suggestion) => (
                           <button
                             key={suggestion}
-                            disabled={!documentId}
-                            onClick={() => setQuestion(suggestion)}
+                            disabled={!documentId || asking}
+                            onClick={() =>
+                              handleSuggestion(suggestion)
+                            }
                           >
                             {suggestion} <span>↗</span>
                           </button>
@@ -961,14 +1428,19 @@ function App() {
                   )}
 
                   {messages.map((message) => (
-                    <div className="conversation" key={message.id}>
+                    <div
+                      className="conversation"
+                      key={message.id}
+                    >
                       <div className="user-message">
                         <span className="user-avatar">U</span>
                         <p>{message.question}</p>
                       </div>
 
                       <div className="assistant-message">
-                        <div className="assistant-avatar">✦</div>
+                        <div className="assistant-avatar">
+                          ✦
+                        </div>
 
                         <div className="assistant-response">
                           {message.loading ? (
@@ -976,43 +1448,58 @@ function App() {
                               <span></span>
                               <span></span>
                               <span></span>
-                              <p>Reading your document...</p>
+                              <p>
+                                {message.isSummary
+                                  ? "Summarizing your entire document..."
+                                  : "Reading your document..."}
+                              </p>
                             </div>
                           ) : (
                             <>
-                              <p className="answer-text">{message.answer}</p>
+                              <p className="answer-text">
+                                {message.answer}
+                              </p>
 
                               {message.sources?.length > 0 && (
                                 <div className="sources">
-                                  <strong>Sources from your document</strong>
+                                  <strong>
+                                    Sources from your document
+                                  </strong>
 
-                                  {message.sources.map((source, index) => (
-                                    <div
-                                      className="source-item"
-                                      key={`${source.chunk_id || index}-${index}`}
-                                    >
-                                      <span>▤</span>
+                                  {message.sources.map(
+                                    (source, index) => (
+                                      <div
+                                        className="source-item"
+                                        key={`${
+                                          source.chunk_id || index
+                                        }-${index}`}
+                                      >
+                                        <span>▤</span>
 
-                                      <div>
-                                        <strong>
-                                          {source.source || "Document source"}
-                                        </strong>
+                                        <div>
+                                          <strong>
+                                            {source.source ||
+                                              "Document source"}
+                                          </strong>
 
-                                        <span>
-                                          {source.page
-                                            ? `Page ${source.page}`
-                                            : "Page not provided"}
-                                        </span>
+                                          <span>
+                                            {source.page
+                                              ? `Page ${source.page}`
+                                              : "Page not provided"}
+                                          </span>
+                                        </div>
                                       </div>
-                                    </div>
-                                  ))}
+                                    )
+                                  )}
                                 </div>
                               )}
 
                               {!message.failed && (
                                 <button
                                   className="copy-button"
-                                  onClick={() => copyAnswer(message.answer)}
+                                  onClick={() =>
+                                    copyAnswer(message.answer)
+                                  }
                                 >
                                   Copy answer
                                 </button>
@@ -1027,10 +1514,15 @@ function App() {
                   <div ref={messagesEndRef}></div>
                 </div>
 
-                <form className="chat-input-area" onSubmit={handleAsk}>
+                <form
+                  className="chat-input-area"
+                  onSubmit={handleAsk}
+                >
                   <textarea
                     value={question}
-                    onChange={(event) => setQuestion(event.target.value)}
+                    onChange={(event) =>
+                      setQuestion(event.target.value)
+                    }
                     placeholder={
                       documentId
                         ? "Ask anything about your document..."
@@ -1039,7 +1531,10 @@ function App() {
                     disabled={!documentId || asking}
                     rows={2}
                     onKeyDown={(event) => {
-                      if (event.key === "Enter" && !event.shiftKey) {
+                      if (
+                        event.key === "Enter" &&
+                        !event.shiftKey
+                      ) {
                         event.preventDefault();
                         handleAsk(event);
                       }
@@ -1047,11 +1542,17 @@ function App() {
                   />
 
                   <div className="input-footer">
-                    <span>Answers are based on your document.</span>
+                    <span>
+                      Answers are based on your document.
+                    </span>
 
                     <button
                       type="submit"
-                      disabled={!documentId || !question.trim() || asking}
+                      disabled={
+                        !documentId ||
+                        !question.trim() ||
+                        asking
+                      }
                     >
                       {asking ? "..." : "↑"}
                     </button>

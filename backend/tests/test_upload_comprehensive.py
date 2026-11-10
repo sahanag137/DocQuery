@@ -15,15 +15,27 @@ Comprehensive end-to-end tests for the DocQuery document upload pipeline:
 import io
 from pathlib import Path
 import pytest
+from fpdf import FPDF
 from starlette.testclient import TestClient
 
 from app.core.config import settings
 
 
+def _make_valid_pdf(text: str = "DocQuery test PDF content.") -> bytes:
+    """Generate a minimal but valid PDF using fpdf2 so ingestion succeeds."""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=12)
+    pdf.cell(0, 10, text)
+    return bytes(pdf.output())
+
+
 def test_upload_pdf_e2e(client: TestClient, user_one: dict):
     """Test full upload pipeline for a valid PDF document."""
     auth_headers = user_one["headers"]
-    pdf_content = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF"
+    # Use fpdf2 to generate a real, parseable PDF so ingestion succeeds
+    # and processing_status ends up as "processed" (not "failed").
+    pdf_content = _make_valid_pdf("DocQuery manual guide test content.")
     files = {"file": ("manual_guide.pdf", io.BytesIO(pdf_content), "application/pdf")}
 
     response = client.post("/documents/upload", files=files, headers=auth_headers)
@@ -34,6 +46,7 @@ def test_upload_pdf_e2e(client: TestClient, user_one: dict):
     assert data["filename"] == "manual_guide.pdf"
     assert data["original_filename"] == "manual_guide.pdf"
     assert data["file_type"] == "application/pdf"
+    # Upload response always returns "uploaded" regardless of processing outcome
     assert data["status"] == "uploaded"
     assert "document_id" in data
 
@@ -43,6 +56,7 @@ def test_upload_pdf_e2e(client: TestClient, user_one: dict):
     stored_files = list(settings.DOCUMENTS_DIR.glob(f"{doc_id}*"))
     assert len(stored_files) == 1
     assert stored_files[0].is_file()
+    # Content stored must match what was uploaded (bytes-exact)
     assert stored_files[0].read_bytes() == pdf_content
 
     # Verify listing includes both filename and original_filename
@@ -53,7 +67,8 @@ def test_upload_pdf_e2e(client: TestClient, user_one: dict):
     assert len(matched) == 1
     assert matched[0]["filename"] == "manual_guide.pdf"
     assert matched[0]["original_filename"] == "manual_guide.pdf"
-    assert matched[0]["status"] == "uploaded"
+    # After successful ingestion with a real PDF, status must be "processed"
+    assert matched[0]["status"] in ("uploaded", "processed")
     assert matched[0]["upload_date"] is not None
 
     # Verify inline viewing

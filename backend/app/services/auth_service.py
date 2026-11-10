@@ -1,3 +1,4 @@
+
 """
 auth_service.py
 
@@ -32,11 +33,13 @@ def register_user(db: Session, signup_data: SignUpRequest) -> User:
     """
     Register a new user account.
 
-    Validates password strength, ensures email uniqueness, creates
-    the User record and provisions default UserSettings.
+    Creates the User record and provisions default settings
+    only when settings do not already exist.
     """
+
     # 1. Validate password strength
     is_valid, msg = validate_password_strength(signup_data.password)
+
     if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -45,7 +48,11 @@ def register_user(db: Session, signup_data: SignUpRequest) -> User:
 
     # 2. Check for duplicate email
     email_clean = signup_data.email.lower().strip()
-    existing_user = db.execute(select(User).where(User.email == email_clean)).scalar_one_or_none()
+
+    existing_user = db.execute(
+        select(User).where(User.email == email_clean)
+    ).scalar_one_or_none()
+
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -54,37 +61,56 @@ def register_user(db: Session, signup_data: SignUpRequest) -> User:
 
     # 3. Create user
     hashed_pwd = get_password_hash(signup_data.password)
+
     new_user = User(
         full_name=signup_data.full_name.strip(),
         email=email_clean,
         hashed_password=hashed_pwd,
         is_active=True,
     )
-    db.add(new_user)
-    db.flush()  # populate new_user.id
 
-    # 4. Provision default settings
-    default_settings = UserSettings(
-        user_id=new_user.id,
-        theme="light",
-        language="en",
-    )
-    db.add(default_settings)
-    db.commit()
-    db.refresh(new_user)
+    try:
+        db.add(new_user)
+        db.flush()
 
-    return new_user
+        # 4. Check whether settings already exist
+        existing_settings = db.execute(
+            select(UserSettings).where(
+                UserSettings.user_id == new_user.id
+            )
+        ).scalar_one_or_none()
+
+        # Create default settings only if they do not exist
+        if existing_settings is None:
+            default_settings = UserSettings(
+                user_id=new_user.id,
+                theme="light",
+                language="en",
+            )
+            db.add(default_settings)
+
+        # 5. Save user and settings
+        db.commit()
+        db.refresh(new_user)
+
+        return new_user
+
+    except Exception:
+        db.rollback()
+        raise
 
 
 def authenticate_user(db: Session, email: str, password: str) -> User:
     """
     Authenticate a user by email and password.
-
-    Raises:
-        HTTPException 401 if credentials are invalid or user inactive.
     """
+
     email_clean = email.lower().strip()
-    user = db.execute(select(User).where(User.email == email_clean)).scalar_one_or_none()
+
+    user = db.execute(
+        select(User).where(User.email == email_clean)
+    ).scalar_one_or_none()
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -110,9 +136,11 @@ def authenticate_user(db: Session, email: str, password: str) -> User:
 
 def create_user_tokens(user: User) -> TokenResponse:
     """Generate an access token for an authenticated user."""
+
     access_token = create_access_token(subject=user.id)
-    
+
     settings_resp = None
+
     if user.settings:
         settings_resp = UserSettingsResponse(
             id=user.settings.id,
@@ -140,21 +168,34 @@ def create_user_tokens(user: User) -> TokenResponse:
     )
 
 
-def request_password_reset(db: Session, email: str) -> Tuple[Optional[str], str]:
+def request_password_reset(
+    db: Session,
+    email: str
+) -> Tuple[Optional[str], str]:
     """
     Initiate a password reset flow.
-    Generates a secure token, hashes it for database storage,
-    and returns (raw_token, message).
+    Generates a secure token and hashes it for database storage.
     """
+
     email_clean = email.lower().strip()
-    user = db.execute(select(User).where(User.email == email_clean)).scalar_one_or_none()
-    generic_msg = "If an account exists with this email, password reset instructions have been generated."
+
+    user = db.execute(
+        select(User).where(User.email == email_clean)
+    ).scalar_one_or_none()
+
+    generic_msg = (
+        "If an account exists with this email, "
+        "password reset instructions have been generated."
+    )
 
     if not user:
         return None, generic_msg
 
     raw_token, token_hash = generate_reset_token()
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES)
+
+    expires_at = datetime.now(timezone.utc) + timedelta(
+        minutes=settings.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES
+    )
 
     reset_record = PasswordResetToken(
         user_id=user.id,
@@ -162,17 +203,24 @@ def request_password_reset(db: Session, email: str) -> Tuple[Optional[str], str]
         expires_at=expires_at,
         used_at=None,
     )
+
     db.add(reset_record)
     db.commit()
 
     return raw_token, generic_msg
 
 
-def reset_password_with_token(db: Session, token: str, new_password: str) -> None:
+def reset_password_with_token(
+    db: Session,
+    token: str,
+    new_password: str
+) -> None:
     """
     Validate a reset token and set a new password.
     """
+
     is_valid, msg = validate_password_strength(new_password)
+
     if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -180,8 +228,11 @@ def reset_password_with_token(db: Session, token: str, new_password: str) -> Non
         )
 
     hashed_input_token = hash_token(token)
+
     record = db.execute(
-        select(PasswordResetToken).where(PasswordResetToken.token_hash == hashed_input_token)
+        select(PasswordResetToken).where(
+            PasswordResetToken.token_hash == hashed_input_token
+        )
     ).scalar_one_or_none()
 
     if not record:
@@ -198,8 +249,8 @@ def reset_password_with_token(db: Session, token: str, new_password: str) -> Non
 
     # Check expiration
     now = datetime.now(timezone.utc)
-    # Ensure record.expires_at is timezone-aware
     expires_at = record.expires_at
+
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
 
@@ -211,6 +262,7 @@ def reset_password_with_token(db: Session, token: str, new_password: str) -> Non
 
     # Update user password
     user = db.get(User, record.user_id)
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -219,4 +271,5 @@ def reset_password_with_token(db: Session, token: str, new_password: str) -> Non
 
     user.hashed_password = get_password_hash(new_password)
     record.used_at = now
+
     db.commit()

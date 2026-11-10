@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     ALLOWED_DOCUMENT_EXTENSIONS: Set[str] = {".pdf", ".txt", ".md"}
     ALLOWED_AVATAR_EXTENSIONS: Set[str] = {".png", ".jpg", ".jpeg", ".webp"}
 
+    # Pipeline & RAG Configuration
+    CHUNK_SIZE: int = 1000
+    CHUNK_OVERLAP: int = 150
+    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
+    LLM_MODEL: str = "openai/gpt-4o-mini"
+
     # CORS
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",

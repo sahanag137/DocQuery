@@ -4,7 +4,10 @@ documents.py
 API routes for document upload, listing, details, inline viewing,
 secure download, and deletion.
 """
+import logging
 
+from starlette.concurrency import run_in_threadpool
+from app.rag.doc_processing.ingest import ingest_document
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -21,7 +24,7 @@ from app.schemas.document import DocumentResponse, DocumentUploadResponse
 from app.services import document_service
 from app.services.document_service import _to_document_response
 from app.utils.file_handler import range_request_response
-
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 
@@ -65,24 +68,96 @@ def _resolve_physical_file(doc: Document) -> Path:
     )
 
 
-@router.post("/upload", response_model=DocumentUploadResponse, status_code=status.HTTP_201_CREATED)
+
+@router.post(
+    "/upload",
+    response_model=DocumentUploadResponse,
+    status_code=status.HTTP_201_CREATED
+)
 async def upload_document(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> DocumentUploadResponse:
-    """
-    Upload a single document (PDF, TXT, or Markdown).
-    Validates file format and size, stores securely, and records ownership.
-    """
-    document = await document_service.save_uploaded_document(
-        db=db, user_id=current_user.id, file=file
-    )
-    doc_id = document.document_id or str(document.id)
-    resolved_name = document.original_filename or document.filename or file.filename or "Uploaded document"
-    resolved_mime = document.mime_type or document.file_type or "application/pdf"
-    resolved_status = document.processing_status or document.status or "uploaded"
 
+    """
+    Upload and process a document using the RAG pipeline.
+    Supports PDF, TXT and Markdown.
+    """
+
+    # 1. Save the uploaded file and database record.
+    document = await document_service.save_uploaded_document(
+        db=db,
+        user_id=current_user.id,
+        file=file
+    )
+
+    doc_id = document.document_id or str(document.id)
+
+    resolved_name = (
+        document.original_filename
+        or document.filename
+        or file.filename
+        or "Uploaded document"
+    )
+
+    resolved_mime = (
+        document.mime_type
+        or document.file_type
+        or "application/octet-stream"
+    )
+
+    # 2. Mark document as processing.
+    document.processing_status = "processing"
+    db.commit()
+    db.refresh(document)
+
+    # 3. Create a separate vector store for this user.
+    storage_dir = (
+        settings.STORAGE_DIR
+        / "vector_store"
+        / f"user_{current_user.id}"
+    )
+
+    try:
+        # 4. Extract, chunk, embed and store document.
+        file_path = _resolve_physical_file(document)
+
+        chunk_count = await run_in_threadpool(
+            ingest_document,
+            file_path=str(file_path),
+            document_id=doc_id,
+            user_id=current_user.id,
+            storage_dir=str(storage_dir),
+            original_filename=resolved_name
+        )
+
+        # 5. Mark document as successfully processed.
+        document.processing_status = "processed"
+        db.commit()
+        db.refresh(document)
+
+        message = (
+            f"File uploaded and processed successfully. "
+            f"{chunk_count} chunks created."
+        )
+
+    except Exception:
+        logger.exception(
+            "Document ingestion failed for document %s",
+            doc_id
+        )
+
+        document.processing_status = "failed"
+        db.commit()
+        db.refresh(document)
+
+        message = (
+            "File uploaded, but document processing failed. "
+            "Please check the backend logs."
+        )
+
+    # 6. Return upload and processing information.
     return DocumentUploadResponse(
         id=document.id,
         document_id=doc_id,
@@ -90,10 +165,11 @@ async def upload_document(
         original_filename=resolved_name,
         file_type=resolved_mime,
         mime_type=resolved_mime,
-        status=resolved_status,
-        processing_status=resolved_status,
-        message="File uploaded successfully.",
+        status="uploaded",
+        processing_status=document.processing_status,
+        message=message
     )
+
 
 
 @router.get("", response_model=List[DocumentResponse])
@@ -179,11 +255,24 @@ def delete_document(
     current_user: User = Depends(get_current_user),
 ) -> Dict[str, str]:
     """
-    Permanently delete a document and its file on disk.
+    Permanently delete a document, its physical file, and its indexed chunks.
     """
     doc = document_service.get_document_by_id_or_uuid(
         db, document_id, user_id=current_user.id
     )
+
+    # Purge from user's vector store if indexed
+    storage_dir = settings.STORAGE_DIR / "vector_store" / f"user_{current_user.id}"
+    try:
+        from app.rag.doc_processing.vector_store import VectorStore
+        store = VectorStore(str(storage_dir))
+        if doc.document_id:
+            store.remove_document(str(doc.document_id))
+        if doc.id:
+            store.remove_document(str(doc.id))
+    except Exception as cleanup_err:
+        logger.warning("Vector store cleanup warning for doc %s: %s", document_id, cleanup_err)
+
     document_service.delete_document(db, doc)
     return {
         "document_id": str(document_id),
