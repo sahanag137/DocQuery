@@ -2,13 +2,13 @@
 chats.py
 
 API routes for conversation management, message storage, search,
-and document-conversation associations.
+document-conversation associations, and category organisation.
 """
 
 import json
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_current_user
@@ -23,6 +23,7 @@ from app.schemas.chat import (
     ConversationUpdate,
     MessageCreate,
     MessageResponse,
+    VALID_CATEGORIES,
 )
 from app.schemas.document import DocumentAssociateRequest, DocumentResponse
 from app.services import chat_service, document_service
@@ -56,6 +57,7 @@ def _conversation_to_summary(conv: Conversation) -> ConversationResponse:
         id=conv.id,
         user_id=conv.user_id,
         title=conv.title,
+        category=conv.category if conv.category else "General",
         is_archived=conv.is_archived,
         created_at=conv.created_at,
         updated_at=conv.updated_at,
@@ -71,6 +73,7 @@ def create_chat(
 ) -> ConversationResponse:
     """
     Start a new conversation thread for the authenticated user.
+    Optionally specify a title and category (General, Study, Development, Research).
     """
     conversation = chat_service.create_conversation(
         db, user_id=current_user.id, conversation_in=data
@@ -81,6 +84,7 @@ def create_chat(
 @router.get("", response_model=List[ConversationResponse])
 def list_chats(
     search: Optional[str] = Query(None, description="Search query across titles and messages"),
+    category: Optional[str] = Query(None, description="Filter by category: General, Study, Development, Research"),
     include_archived: bool = Query(False, description="Whether to include archived chats"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
@@ -89,17 +93,27 @@ def list_chats(
 ) -> List[ConversationResponse]:
     """
     List conversations for the current user, ordered by most recently active.
-    Supports full-text filtering by conversation title or message content.
+    Supports full-text filtering by conversation title or message content,
+    and filtering by category.
     """
     conversations = chat_service.get_user_conversations(
         db,
         user_id=current_user.id,
         search=search,
+        category=category,
         include_archived=include_archived,
         skip=skip,
         limit=limit,
     )
     return [_conversation_to_summary(c) for c in conversations]
+
+
+@router.get("/categories", response_model=List[str])
+def list_categories(
+    current_user: User = Depends(get_current_user),
+) -> List[str]:
+    """Return the available conversation categories."""
+    return sorted(VALID_CATEGORIES)
 
 
 @router.get("/{chat_id}", response_model=ConversationDetailResponse)
@@ -110,7 +124,7 @@ def get_chat(
 ) -> ConversationDetailResponse:
     """
     Retrieve full conversation details, including complete message history
-    and attached documents.
+    and attached documents. Used when resuming a previous conversation.
     """
     conv = chat_service.get_conversation_by_id(
         db, conversation_id=chat_id, user_id=current_user.id
@@ -127,6 +141,7 @@ def get_chat(
         id=conv.id,
         user_id=conv.user_id,
         title=conv.title,
+        category=conv.category if conv.category else "General",
         is_archived=conv.is_archived,
         created_at=conv.created_at,
         updated_at=conv.updated_at,
@@ -143,7 +158,8 @@ def update_chat(
     current_user: User = Depends(get_current_user),
 ) -> ConversationResponse:
     """
-    Rename or archive/restore a conversation.
+    Rename, archive/restore, or recategorise a conversation.
+    Category must be one of: General, Study, Development, Research.
     """
     conv = chat_service.update_conversation(
         db, conversation_id=chat_id, user_id=current_user.id, update_data=data
@@ -159,6 +175,7 @@ def delete_chat(
 ) -> Dict[str, str]:
     """
     Delete a conversation and all its messages.
+    Documents uploaded by the user are NOT deleted.
     """
     chat_service.delete_conversation(
         db, conversation_id=chat_id, user_id=current_user.id

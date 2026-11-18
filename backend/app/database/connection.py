@@ -60,13 +60,32 @@ def get_db() -> Generator[Session, None, None]:
 def _migrate_existing_tables() -> None:
     """
     Safely alter existing SQLite tables if they exist with older schema
-    to avoid dropping or losing existing document records.
+    to avoid dropping or losing existing records.
     """
     if not settings.DATABASE_URL.startswith("sqlite"):
         return
 
     with engine.connect() as conn:
-        # Check if 'documents' table exists
+        # ------------------------------------------------------------------ #
+        # conversations table: add 'category' column if missing               #
+        # ------------------------------------------------------------------ #
+        conv_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='conversations'")
+        ).scalar_one_or_none()
+
+        if conv_table:
+            conv_cols = [
+                row[1] for row in conn.execute(text("PRAGMA table_info(conversations)")).fetchall()
+            ]
+            if "category" not in conv_cols:
+                conn.execute(
+                    text("ALTER TABLE conversations ADD COLUMN category VARCHAR(64) NOT NULL DEFAULT 'General'")
+                )
+            conn.commit()
+
+        # ------------------------------------------------------------------ #
+        # documents table: add missing columns from earlier schema versions   #
+        # ------------------------------------------------------------------ #
         check_table = conn.execute(
             text("SELECT name FROM sqlite_master WHERE type='table' AND name='documents'")
         ).scalar_one_or_none()

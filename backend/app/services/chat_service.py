@@ -2,14 +2,14 @@
 chat_service.py
 
 Service layer for managing conversations, message history, searching chats,
-and handling conversation lifecycle (archiving, renaming, deleting).
+and handling conversation lifecycle (archiving, renaming, categorising, deleting).
 """
 
 import json
 from typing import List, Optional
 
 from fastapi import HTTPException, status
-from sqlalchemy import distinct, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.conversation import Conversation
@@ -17,6 +17,20 @@ from app.models.conversation_document import ConversationDocument
 from app.models.document import Document
 from app.models.message import Message
 from app.schemas.chat import ConversationCreate, ConversationUpdate, MessageCreate
+
+# Allowed categories for conversation organisation
+ALLOWED_CATEGORIES = {"General", "Study", "Development", "Research"}
+DEFAULT_CATEGORY = "General"
+
+
+def _normalise_category(category: Optional[str]) -> str:
+    """Normalise and validate a category string; fall back to 'General' if invalid."""
+    if not category:
+        return DEFAULT_CATEGORY
+    stripped = category.strip()
+    if stripped in ALLOWED_CATEGORIES:
+        return stripped
+    return DEFAULT_CATEGORY
 
 
 def create_conversation(
@@ -26,9 +40,11 @@ def create_conversation(
 ) -> Conversation:
     """Create a new conversation session for an authenticated user."""
     title = conversation_in.title.strip() if conversation_in and conversation_in.title else "New Chat"
+    category = _normalise_category(conversation_in.category if conversation_in else None)
     conversation = Conversation(
         user_id=user_id,
         title=title,
+        category=category,
         is_archived=False,
     )
     db.add(conversation)
@@ -41,13 +57,15 @@ def get_user_conversations(
     db: Session,
     user_id: int,
     search: Optional[str] = None,
+    category: Optional[str] = None,
     include_archived: bool = False,
     skip: int = 0,
     limit: int = 50,
 ) -> List[Conversation]:
     """
     Retrieve conversations for a user.
-    Supports text search across conversation titles and message content.
+    Supports text search across conversation titles and message content,
+    and filtering by category.
     """
     stmt = (
         select(Conversation)
@@ -57,6 +75,11 @@ def get_user_conversations(
 
     if not include_archived:
         stmt = stmt.where(Conversation.is_archived.is_(False))
+
+    # Category filter (exact match, case-sensitive)
+    if category and category.strip():
+        normalised = _normalise_category(category)
+        stmt = stmt.where(Conversation.category == normalised)
 
     if search and search.strip():
         term = f"%{search.strip()}%"
@@ -113,16 +136,23 @@ def update_conversation(
     user_id: int,
     update_data: ConversationUpdate,
 ) -> Conversation:
-    """Update title or archive status of a conversation."""
+    """Update title, archive status, or category of a conversation."""
     conversation = get_conversation_by_id(db, conversation_id, user_id=user_id)
 
     if update_data.title is not None:
         new_title = update_data.title.strip()
-        if new_title:
-            conversation.title = new_title
+        if not new_title:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Conversation title cannot be empty.",
+            )
+        conversation.title = new_title
 
     if update_data.is_archived is not None:
         conversation.is_archived = update_data.is_archived
+
+    if update_data.category is not None:
+        conversation.category = _normalise_category(update_data.category)
 
     db.commit()
     db.refresh(conversation)

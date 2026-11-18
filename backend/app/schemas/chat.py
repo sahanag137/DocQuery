@@ -10,6 +10,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.document import DocumentResponse
 
+# Valid categories for conversation organisation
+VALID_CATEGORIES = {"General", "Study", "Development", "Research"}
+
 
 class MessageCreate(BaseModel):
     """Payload to add a new message to a conversation."""
@@ -35,12 +38,14 @@ class MessageResponse(BaseModel):
 class ConversationCreate(BaseModel):
     """Payload to start a new conversation."""
     title: Optional[str] = Field(default="New Chat", max_length=255)
+    category: Optional[str] = Field(default="General", max_length=64)
 
 
 class ConversationUpdate(BaseModel):
-    """Payload to update/rename/archive a conversation."""
+    """Payload to update/rename/archive/recategorise a conversation."""
     title: Optional[str] = Field(None, max_length=255)
     is_archived: Optional[bool] = None
+    category: Optional[str] = Field(None, max_length=64)
 
 
 class ConversationResponse(BaseModel):
@@ -48,6 +53,7 @@ class ConversationResponse(BaseModel):
     id: int
     user_id: int
     title: str
+    category: str = "General"
     is_archived: bool
     created_at: datetime
     updated_at: datetime
@@ -61,6 +67,7 @@ class ConversationDetailResponse(BaseModel):
     id: int
     user_id: int
     title: str
+    category: str = "General"
     is_archived: bool
     created_at: datetime
     updated_at: datetime

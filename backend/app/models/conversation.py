@@ -28,6 +28,7 @@ class Conversation(Base):
         Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
     )
     title: Mapped[str] = mapped_column(String(255), default="New Chat", nullable=False)
+    category: Mapped[str] = mapped_column(String(64), default="General", nullable=False)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, index=True, nullable=False
@@ -46,4 +47,4 @@ class Conversation(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<Conversation(id={self.id}, user_id={self.user_id}, title={self.title!r})>"
+        return f"<Conversation(id={self.id}, user_id={self.user_id}, title={self.title!r}, category={self.category!r})>"
